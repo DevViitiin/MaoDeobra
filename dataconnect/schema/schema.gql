@@ -1,0 +1,52 @@
+type User @table {
+  username: String!
+  email: String!
+  createdAt: Timestamp!
+  userType: String!
+  passwordHash: String
+  phoneNumber: String
+  profilePictureUrl: String
+  location: String
+}
+
+type ServiceCategory @table {
+  name: String!
+  description: String!
+}
+
+type ServiceRequest @table {
+  title: String!
+  description: String!
+  location: String!
+  status: String!
+  createdAt: Timestamp!
+  seeker: User
+  category: ServiceCategory
+  budget: Float
+  dueDate: Date
+}
+
+type ServiceProviderProfile @table {
+  bio: String!
+  hourlyRate: Float!
+  availability: String!
+  createdAt: Timestamp!
+  provider: User
+  portfolioUrl: String
+  experienceYears: Int
+}
+
+type ServiceOffering @table {
+  serviceDescription: String!
+  serviceProviderProfile: ServiceProviderProfile
+  serviceCategory: ServiceCategory
+}
+
+type ServiceReview @table {
+  rating: Int!
+  comment: String!
+  createdAt: Timestamp!
+  reviewer: User
+  reviewee: User
+  serviceRequest: ServiceRequest
+}

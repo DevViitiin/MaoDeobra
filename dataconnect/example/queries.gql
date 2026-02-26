@@ -1,0 +1,24 @@
+mutation AddServiceCategory($name: String!, $description: String!) @auth(level: USER) {
+  serviceCategory_insert(data: {name: $name, description: $description})
+}
+
+query ListServiceCategories @auth(level: PUBLIC, insecureReason: "This operation is safe to expose to the public") {
+  serviceCategories {
+    id
+    name
+    description
+  }
+}
+
+mutation UpdateServiceProviderProfile($id: UUID!, $bio: String) @auth(level: USER) {
+  serviceProviderProfile_update(id: $id, data: {bio: $bio})
+}
+
+query GetMyServiceRequests @auth(level: USER) {
+  serviceRequests(where: {seekerId: {eq_expr: "auth.uid"}}) {
+    id
+    title
+    description
+    status
+  }
+}

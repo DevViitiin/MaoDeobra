@@ -1,0 +1,10 @@
+{
+
+  "scripts": {
+  "lint": "eslint .",
+  "serve": "firebase emulators:start",
+  "deploy": "firebase deploy",
+  "logs": "firebase functions:log"
+}
+
+}

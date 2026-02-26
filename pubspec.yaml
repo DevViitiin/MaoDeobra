@@ -1,0 +1,82 @@
+name: dartobra_new
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # UI & Icons
+  cupertino_icons: ^1.0.8
+  
+  # Firebase (VERSÕES COMPATÍVEIS COM firebase_core ^2.27.0)
+  firebase_core: ^2.27.0
+  firebase_database: ^10.5.7
+  firebase_auth: ^4.20.0
+  firebase_storage: ^11.7.7
+  firebase_messaging: ^14.7.10  # ✅ Versão compatível (downgrade de 14.9.4)
+  
+  # Imagem & Vídeo (ESSENCIAIS PARA MIGRAÇÃO)
+  image_picker: ^1.1.2
+  flutter_image_compress: ^2.3.0
+  video_compress: ^3.1.3
+  video_player: ^2.9.2
+  chewie: ^1.8.5
+  cached_network_image: ^3.3.1  # ✅ Versão compatível (downgrade de 3.4.1)
+  
+  # Storage & Paths
+  path_provider: ^2.1.5
+  path: ^1.9.0
+  
+  # State Management & Storage
+  provider: ^6.1.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  
+  # Notificações
+  flutter_local_notifications: ^17.2.3  # ✅ Versão compatível
+  
+  # Permissões
+  permission_handler: ^11.3.1
+  
+  # Network & Email
+  http: ^1.2.2
+  emailjs: ^4.0.0
+  mailer: ^6.1.2
+  url_launcher: ^6.3.1
+  
+  # Crypto (MANTER - usado em outras partes do app)
+  crypto: ^3.0.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  # Linting & Build
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.13
+  
+  # Hive
+  hive_generator: ^2.0.1
+  
+  # Launcher Icons
+  flutter_launcher_icons: ^0.14.1
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  adaptive_icon_background: "#2563EB"
+  adaptive_icon_foreground: "assets/logo_no_bg.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png
+    - assets/logo_no_bg.png
+    - assets/logos.png

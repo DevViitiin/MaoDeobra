@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "943998527706",
+    "firebase_url": "https://obra-7ebd9-default-rtdb.firebaseio.com",
+    "project_id": "obra-7ebd9",
+    "storage_bucket": "obra-7ebd9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:943998527706:android:88e88012ecc100e4b29de3",
+        "android_client_info": {
+          "package_name": "com.vstecnology.dartobranew"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "943998527706-ovdl68l0ns6el2n3ude6b4va791dcanh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.vstecnology.dartobranew",
+            "certificate_hash": "79f9b540dcd9f7d98554ab49d74244d8c17a7907"
+          }
+        },
+        {
+          "client_id": "943998527706-jtivtbnmqtb8cncia137i3tfrc928f6r.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCXvo-N3zOw-lTp0pqH-mswMF5FYGCn87Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "943998527706-jtivtbnmqtb8cncia137i3tfrc928f6r.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "943998527706-6jj0ehvral7tjnta040pdf1o34dnl55f.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.vstecnology.maodeobra"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

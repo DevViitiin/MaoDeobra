@@ -1,0 +1,93 @@
+{
+  "folder-color.pathColors": [
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\chat\\chat_list_screen.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\chat\\chat_room_screen.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\chat\\",
+      "color": "foldercolorizer.color_00cc00",
+      "badge": "😁"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\services\\services_chat\\firebase_service.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\services\\services_chat\\chat_service.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\services\\services_chat\\chat_migration_service.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\services\\services_chat\\",
+      "badge": "😁",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\controllers\\chat_controller.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\controllers\\search_controller.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\controllers\\",
+      "color": "foldercolorizer.color_00cc00",
+      "badge": "😁"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\search_vacancy\\vacancy_details_page.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\search_vacancy\\search_page.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\search_vacancy\\professional_profile.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\search_vacancy\\",
+      "color": "foldercolorizer.color_00cc00",
+      "badge": "😁"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\vacancy_management\\info_vacancy.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\vacancy_management\\vacancy_management.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\vacancy_management\\edit_info_vacancy.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\vacancy_management\\create_vacancys.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\vacancy_management\\components.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\vacancy_management\\worker_profile_activation.dart\\",
+      "color": "foldercolorizer.color_00cc00"
+    },
+    {
+      "folderPath": "dartobra_new\\lib\\screens\\app_home\\vacancy_management\\",
+      "color": "foldercolorizer.color_00cc00",
+      "badge": "😁"
+    }
+  ]
+}
