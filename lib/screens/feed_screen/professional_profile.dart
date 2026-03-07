@@ -780,7 +780,7 @@ class _ProfessionalProfileScreenState extends State<ProfessionalProfileScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ComplaintVacancy(
+        builder: (_) => ComplaintProfessional(
           vacancyId: widget.professionalId,
           reportId: widget.currentUserId,
           reportedId: widget.reportedId,

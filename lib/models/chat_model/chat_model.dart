@@ -6,6 +6,7 @@ class Chat {
   final String chatId;
   final String contractorId;
   final String employeeId;
+  final bool blockDialog;
   final ChatMetadata metadata;
   final Map<String, ParticipantData> participants;
   final Map<String, int> unreadCount;
@@ -14,6 +15,7 @@ class Chat {
     required this.chatId,
     required this.contractorId,
     required this.employeeId,
+    required this.blockDialog,
     required this.metadata,
     required this.participants,
     required this.unreadCount,
@@ -33,12 +35,10 @@ class Chat {
       final participants = <String, ParticipantData>{};
 
       if (participantsMap != null) {
-        // Detecta o formato
         final format = ParticipantsHelper.detectFormat(participantsMap);
         print('📋 Chat $chatId: formato participants = $format');
 
         if (format == 'old_flat') {
-          // FORMATO ANTIGO (flat)
           participants['contractor'] = ParticipantData.fromMap(
             participantsMap,
             'contractor',
@@ -48,7 +48,6 @@ class Chat {
             'employee',
           );
         } else if (format == 'new_nested') {
-          // FORMATO NOVO (nested)
           if (participantsMap['contractor'] is Map) {
             participants['contractor'] = ParticipantData.fromMap(
               participantsMap,
@@ -77,6 +76,7 @@ class Chat {
         chatId: chatId,
         contractorId: map['contractor'] as String? ?? '',
         employeeId: map['employee'] as String? ?? '',
+        blockDialog: map['block_dialog'] as bool? ?? false,
         metadata: metadata,
         participants: participants,
         unreadCount: unreadCount,
@@ -93,11 +93,12 @@ class Chat {
     return {
       'contractor': contractorId,
       'employee': employeeId,
+      'block_dialog': blockDialog,
       'metadata': metadata.toMap(),
       'participants': {
-        'contractor': participants['contractor']?.toMap() ?? 
+        'contractor': participants['contractor']?.toMap() ??
             {'status': 'offline', 'last_seen': 0},
-        'employee': participants['employee']?.toMap() ?? 
+        'employee': participants['employee']?.toMap() ??
             {'status': 'offline', 'last_seen': 0},
       },
       'unreadCount': unreadCount,
@@ -114,6 +115,7 @@ class Chat {
     return {
       'contractor': contractorId,
       'employee': employeeId,
+      'block_dialog': false,
       'metadata': {
         'created_at': now,
         'last_message': '',
@@ -137,10 +139,12 @@ class Chat {
     };
   }
 
+  // ✅ CORRIGIDO: blockDialog adicionado ao copyWith
   Chat copyWith({
     String? chatId,
     String? contractorId,
     String? employeeId,
+    bool? blockDialog,
     ChatMetadata? metadata,
     Map<String, ParticipantData>? participants,
     Map<String, int>? unreadCount,
@@ -149,6 +153,7 @@ class Chat {
       chatId: chatId ?? this.chatId,
       contractorId: contractorId ?? this.contractorId,
       employeeId: employeeId ?? this.employeeId,
+      blockDialog: blockDialog ?? this.blockDialog,
       metadata: metadata ?? this.metadata,
       participants: participants ?? this.participants,
       unreadCount: unreadCount ?? this.unreadCount,

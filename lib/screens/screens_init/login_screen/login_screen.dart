@@ -10,23 +10,29 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   bool canEnter = false;
   bool emailValid = false;
   bool obscurePassword = true;
+  bool _isLoading = false;
+
   final controller = LoginController();
   final _formKey = GlobalKey<FormState>();
-  late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-  late Animation<double> _scaleAnimation;
+
+  late final AnimationController _animationController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
+  late final Animation<double> _scaleAnimation;
+
+  // ── Ciclo de vida ──────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
     controller.emailController.addListener(_validateFields);
     controller.passwordController.addListener(_validateFields);
-    
+
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -59,20 +65,29 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     _animationController.forward();
   }
 
-  void _validateFields() {
-    final emailOk = controller.emailController.text.isNotEmpty;
-    final senhaOk = controller.passwordController.text.isNotEmpty;
+  @override
+  void dispose() {
+    controller.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
 
+  // ── Validação ──────────────────────────────────────────────────────────────
+
+  void _validateFields() {
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    final emailFormatValid = emailRegex.hasMatch(
-      controller.emailController.text,
-    );
+    final emailFormatValid =
+        emailRegex.hasMatch(controller.emailController.text);
 
     setState(() {
       emailValid = emailFormatValid;
-      canEnter = emailOk && senhaOk && emailFormatValid;
+      canEnter = controller.emailController.text.isNotEmpty &&
+          controller.passwordController.text.isNotEmpty &&
+          emailFormatValid;
     });
   }
+
+  // ── Feedback visual ────────────────────────────────────────────────────────
 
   void _showErrorSnackBar(String message, {bool isWarning = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -80,7 +95,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         content: Row(
           children: [
             Icon(
-              isWarning ? Icons.warning_amber_rounded : Icons.error_outline_rounded,
+              isWarning
+                  ? Icons.warning_amber_rounded
+                  : Icons.error_outline_rounded,
               color: Colors.white,
               size: 24,
             ),
@@ -96,7 +113,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
             ),
           ],
         ),
-        backgroundColor: isWarning ? Colors.orange.shade700 : Colors.red.shade700,
+        backgroundColor:
+            isWarning ? Colors.orange.shade700 : Colors.red.shade700,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         margin: const EdgeInsets.all(20),
@@ -106,18 +124,42 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     );
   }
 
-  @override
-  void dispose() {
-    controller.dispose();
-    _animationController.dispose();
-    super.dispose();
+  // ── Login ──────────────────────────────────────────────────────────────────
+
+  Future<void> _handleLogin() async {
+    setState(() => _isLoading = true);
+
+    final result = await controller.signIn(
+      email: controller.emailController.text.trim(),
+      password: controller.passwordController.text.trim(),
+    );
+
+    if (!mounted) return;
+
+    if (result['success'] == true) {
+      final User? user = result['user'] as User?;
+      if (user == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Busca UserModel e navega para a tela correta (ban / suspensão / advertência / home)
+      await controller.loadUserAndNavigate(context, user.uid);
+    } else {
+      setState(() => _isLoading = false);
+      _showErrorSnackBar(
+        result['message'] as String,
+        isWarning: result['errorType'] == 'network',
+      );
+    }
   }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final screenHeight = MediaQuery.of(context).size.height;
-
     final showEmailFormatError =
         controller.emailController.text.isNotEmpty && !emailValid;
 
@@ -135,22 +177,22 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                 child: Column(
                   children: [
                     SizedBox(height: screenHeight * 0.02),
-                    
-                    // Logo com animação
+
+                    // Logo
                     ScaleTransition(
                       scale: _scaleAnimation,
                       child: SizedBox(
                         width: screenWidth * 0.7 * 0.95,
-                        height: screenHeight * 0.25 * 1,
+                        height: screenHeight * 0.25,
                         child: Image.asset(
                           'assets/logo_no_bg.png',
                           fit: BoxFit.contain,
                         ),
                       ),
                     ),
-                    
+
                     SizedBox(height: screenHeight * 0.007),
-                    
+
                     // Título e subtítulo
                     SlideTransition(
                       position: _slideAnimation,
@@ -178,9 +220,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         ],
                       ),
                     ),
-                    
+
                     SizedBox(height: screenHeight * 0.04),
-                    
+
                     // Formulário
                     SlideTransition(
                       position: _slideAnimation,
@@ -189,9 +231,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Label Email
+                            // ── Email ────────────────────────────────────
                             Padding(
-                              padding: const EdgeInsets.only(left: 4, bottom: 8),
+                              padding:
+                                  const EdgeInsets.only(left: 4, bottom: 8),
                               child: Text(
                                 'Email',
                                 style: TextStyle(
@@ -202,8 +245,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 ),
                               ),
                             ),
-                            
-                            // Campo de Email
                             Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
@@ -238,8 +279,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                     decoration: BoxDecoration(
                                       gradient: LinearGradient(
                                         colors: showEmailFormatError
-                                            ? [Colors.red.shade400, Colors.red.shade600]
-                                            : [Colors.blue.shade500, Colors.blue.shade700],
+                                            ? [
+                                                Colors.red.shade400,
+                                                Colors.red.shade600
+                                              ]
+                                            : [
+                                                Colors.blue.shade500,
+                                                Colors.blue.shade700
+                                              ],
                                       ),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
@@ -249,9 +296,11 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                       size: 20,
                                     ),
                                   ),
-                                  suffixIcon: controller.emailController.text.isNotEmpty
+                                  suffixIcon: controller
+                                          .emailController.text.isNotEmpty
                                       ? Padding(
-                                          padding: const EdgeInsets.only(right: 12),
+                                          padding:
+                                              const EdgeInsets.only(right: 12),
                                           child: Icon(
                                             emailValid
                                                 ? Icons.check_circle_rounded
@@ -296,18 +345,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 ),
                               ),
                             ),
-                            
-                            // Mensagem de erro
                             if (showEmailFormatError)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8, left: 4),
                                 child: Row(
                                   children: [
-                                    Icon(
-                                      Icons.info_outline_rounded,
-                                      size: 15,
-                                      color: Colors.red[600],
-                                    ),
+                                    Icon(Icons.info_outline_rounded,
+                                        size: 15, color: Colors.red[600]),
                                     const SizedBox(width: 6),
                                     Text(
                                       'Digite um email válido',
@@ -320,12 +364,13 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   ],
                                 ),
                               ),
-                            
+
                             SizedBox(height: screenHeight * 0.025),
-                            
-                            // Label Senha
+
+                            // ── Senha ────────────────────────────────────
                             Padding(
-                              padding: const EdgeInsets.only(left: 4, bottom: 8),
+                              padding:
+                                  const EdgeInsets.only(left: 4, bottom: 8),
                               child: Text(
                                 'Senha',
                                 style: TextStyle(
@@ -336,8 +381,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 ),
                               ),
                             ),
-                            
-                            // Campo de Senha
                             Container(
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(16),
@@ -390,11 +433,8 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                       color: Colors.grey[600],
                                       size: 22,
                                     ),
-                                    onPressed: () {
-                                      setState(() {
-                                        obscurePassword = !obscurePassword;
-                                      });
-                                    },
+                                    onPressed: () => setState(() =>
+                                        obscurePassword = !obscurePassword),
                                   ),
                                   filled: true,
                                   fillColor: Colors.grey[50],
@@ -423,10 +463,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 ),
                               ),
                             ),
-                            
+
                             SizedBox(height: screenHeight * 0.015),
-                            
-                            // Esqueci minha senha
+
+                            // ── Esqueci minha senha ───────────────────────
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton(
@@ -438,7 +478,6 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                     );
                                     return;
                                   }
-
                                   if (!emailValid) {
                                     _showErrorSnackBar(
                                       'Insira um email válido.',
@@ -451,14 +490,14 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                     showDialog(
                                       context: context,
                                       barrierDismissible: false,
-                                      builder: (context) => const Center(
-                                        child: CircularProgressIndicator(),
-                                      ),
+                                      builder: (_) => const Center(
+                                          child: CircularProgressIndicator()),
                                     );
 
                                     await FirebaseAuth.instance
                                         .sendPasswordResetEmail(
-                                      email: controller.emailController.text.trim(),
+                                      email: controller.emailController.text
+                                          .trim(),
                                     );
 
                                     if (mounted) {
@@ -466,29 +505,24 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) =>
+                                          builder: (_) =>
                                               PasswordRecoveryInfoScreen(
-                                            email: controller.emailController.text
+                                            email: controller
+                                                .emailController.text
                                                 .trim(),
                                           ),
                                         ),
                                       );
                                     }
                                   } catch (e) {
-                                    if (mounted) {
-                                      Navigator.pop(context);
-                                    }
-
+                                    if (mounted) Navigator.pop(context);
                                     _showErrorSnackBar(
-                                      'Erro ao enviar email de recuperação.',
-                                    );
+                                        'Erro ao enviar email de recuperação.');
                                   }
                                 },
                                 style: TextButton.styleFrom(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 4,
-                                  ),
+                                      horizontal: 4, vertical: 4),
                                 ),
                                 child: Text(
                                   'Esqueci minha senha',
@@ -500,57 +534,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 ),
                               ),
                             ),
-                            
+
                             SizedBox(height: screenHeight * 0.03),
-                            
-                            // Botão Entrar
+
+                            // ── Botão Entrar ──────────────────────────────
                             SizedBox(
                               width: double.infinity,
                               height: screenHeight * 0.065,
                               child: ElevatedButton(
-                                onPressed: canEnter
-                                    ? () async {
-                                        print('🔐 Tentando fazer login...');
-
-                                        final result = await controller.signIn(
-                                          email: controller.emailController.text.trim(),
-                                          password: controller.passwordController.text.trim(),
-                                        );
-
-                                        if (result['success']) {
-                                          final user = result['user'];
-                                          if (user == null) return;
-
-                                          final String localId = user.uid;
-                                          Map<String, dynamic>? userData;
-                                          userData = await controller.GetUser(localId);
-
-                                          if (userData == null) {
-                                            _showErrorSnackBar(
-                                              'Usuário não encontrado',
-                                              isWarning: true,
-                                            );
-                                            return;
-                                          }
-
-                                          if (mounted) {
-                                            controller.NextScreenUser(
-                                              context,
-                                              userData,
-                                              localId,
-                                            );
-                                          }
-                                        } else {
-                                          final message = result['message'];
-                                          final errorType = result['errorType'];
-
-                                          print('❌ Erro: $message');
-                                          _showErrorSnackBar(
-                                            message,
-                                            isWarning: errorType == 'network',
-                                          );
-                                        }
-                                      }
+                                onPressed: (canEnter && !_isLoading)
+                                    ? _handleLogin
                                     : null,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.transparent,
@@ -562,7 +555,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                 ),
                                 child: Ink(
                                   decoration: BoxDecoration(
-                                    gradient: canEnter
+                                    gradient: (canEnter && !_isLoading)
                                         ? LinearGradient(
                                             colors: [
                                               Colors.blue.shade600,
@@ -578,7 +571,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                             ],
                                           ),
                                     borderRadius: BorderRadius.circular(16),
-                                    boxShadow: canEnter
+                                    boxShadow: (canEnter && !_isLoading)
                                         ? [
                                             BoxShadow(
                                               color: Colors.blue.shade600
@@ -591,48 +584,57 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   ),
                                   child: Container(
                                     alignment: Alignment.center,
-                                    child: Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Text(
-                                          'Entrar',
-                                          style: TextStyle(
-                                            fontSize: screenHeight * 0.021,
-                                            fontWeight: FontWeight.bold,
-                                            color: canEnter
-                                                ? Colors.white
-                                                : Colors.grey[600],
-                                            letterSpacing: 0.5,
+                                    child: _isLoading
+                                        ? const SizedBox(
+                                            width: 24,
+                                            height: 24,
+                                            child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2.5,
+                                            ),
+                                          )
+                                        : Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Text(
+                                                'Entrar',
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      screenHeight * 0.021,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: canEnter
+                                                      ? Colors.white
+                                                      : Colors.grey[600],
+                                                  letterSpacing: 0.5,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Icon(
+                                                Icons.arrow_forward_rounded,
+                                                color: canEnter
+                                                    ? Colors.white
+                                                    : Colors.grey[600],
+                                                size: 20,
+                                              ),
+                                            ],
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Icon(
-                                          Icons.arrow_forward_rounded,
-                                          color: canEnter
-                                              ? Colors.white
-                                              : Colors.grey[600],
-                                          size: 20,
-                                        ),
-                                      ],
-                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                            
+
                             SizedBox(height: screenHeight * 0.025),
-                            
-                            // Divider
+
+                            // ── Divider ───────────────────────────────────
                             Row(
                               children: [
                                 Expanded(
-                                  child: Divider(
-                                    color: Colors.grey[300],
-                                    thickness: 1,
-                                  ),
-                                ),
+                                    child: Divider(
+                                        color: Colors.grey[300], thickness: 1)),
                                 Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16),
                                   child: Text(
                                     'ou',
                                     style: TextStyle(
@@ -643,42 +645,32 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                   ),
                                 ),
                                 Expanded(
-                                  child: Divider(
-                                    color: Colors.grey[300],
-                                    thickness: 1,
-                                  ),
-                                ),
+                                    child: Divider(
+                                        color: Colors.grey[300], thickness: 1)),
                               ],
                             ),
-                            
+
                             SizedBox(height: screenHeight * 0.025),
-                            
-                            // Botão Criar Conta
+
+                            // ── Botão Criar Conta ─────────────────────────
                             SizedBox(
                               width: double.infinity,
                               height: screenHeight * 0.065,
                               child: OutlinedButton(
-                                onPressed: () {
-                                  controller.nextScreen(context);
-                                },
+                                onPressed: () => controller.nextScreen(context),
                                 style: OutlinedButton.styleFrom(
                                   side: BorderSide(
-                                    color: Colors.blue.shade700,
-                                    width: 2,
-                                  ),
+                                      color: Colors.blue.shade700, width: 2),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  backgroundColor: Colors.blue.shade50.withOpacity(0.3),
+                                      borderRadius: BorderRadius.circular(16)),
+                                  backgroundColor:
+                                      Colors.blue.shade50.withOpacity(0.3),
                                 ),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(
-                                      Icons.person_add_outlined,
-                                      color: Colors.blue.shade700,
-                                      size: 20,
-                                    ),
+                                    Icon(Icons.person_add_outlined,
+                                        color: Colors.blue.shade700, size: 20),
                                     const SizedBox(width: 8),
                                     Text(
                                       'Criar nova conta',
@@ -697,7 +689,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         ),
                       ),
                     ),
-                    
+
                     SizedBox(height: screenHeight * 0.04),
                   ],
                 ),

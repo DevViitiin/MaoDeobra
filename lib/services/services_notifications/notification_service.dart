@@ -5,8 +5,8 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
-/// Handler GLOBAL para notificações em background
-/// IMPORTANTE: Deve estar fora da classe, no top-level
+/// Handler GLOBAL para notificações em background.
+/// IMPORTANTE: Deve estar fora da classe, no top-level.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('📬 Mensagem em background: ${message.notification?.title}');
@@ -17,48 +17,42 @@ class NotificationService {
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
 
-  // Singleton pattern
+  // Singleton
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
 
-  // Callback para navegação (será configurado externamente)
+  /// Callback para navegação de chat (configurado externamente)
   Function(String chatId, String senderId)? onNotificationTap;
-  Function(String requestType, String? profileId, String? vacancyId)? onRequestNotificationTap;
+
+  /// Callback para navegação de solicitações (configurado externamente)
+  Function(String requestType, String? profileId, String? vacancyId)?
+      onRequestNotificationTap;
 
   // ============================================================
   // INICIALIZAÇÃO PRINCIPAL
   // ============================================================
 
-  /// Inicializa FCM e salva token no Firebase
   Future<void> initialize(String userId) async {
     try {
       debugPrint('🔔 Inicializando serviço de notificações...');
 
-      // 1. Solicita permissão
       final settings = await _requestPermission();
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
         debugPrint('✅ Permissão de notificação concedida');
 
-        // 2. Pega e salva o token FCM
         await _getAndSaveToken(userId);
-
-        // 3. Configura notificações locais
         await _setupLocalNotifications();
-
-        // 4. Configura listeners de mensagens
         _setupMessageHandlers();
-
-        // 5. Monitora refresh do token
         _setupTokenRefreshListener(userId);
 
         debugPrint('✅ Serviço de notificações inicializado com sucesso');
-      } else if (settings.authorizationStatus ==
-          AuthorizationStatus.denied) {
+      } else if (settings.authorizationStatus == AuthorizationStatus.denied) {
         debugPrint('❌ Permissão de notificação negada pelo usuário');
       } else {
-        debugPrint('⚠️ Permissão de notificação: ${settings.authorizationStatus}');
+        debugPrint(
+            '⚠️ Permissão de notificação: ${settings.authorizationStatus}');
       }
     } catch (e) {
       debugPrint('❌ Erro ao inicializar notificações: $e');
@@ -81,7 +75,6 @@ class NotificationService {
     );
   }
 
-  /// Verifica se tem permissão
   Future<bool> hasPermission() async {
     final settings = await _fcm.getNotificationSettings();
     return settings.authorizationStatus == AuthorizationStatus.authorized;
@@ -99,7 +92,6 @@ class NotificationService {
         await FirebaseDatabase.instance
             .ref('Users/$userId/fcmToken')
             .set(token);
-
         debugPrint('✅ Token FCM salvo: ${token.substring(0, 20)}...');
       } else {
         debugPrint('⚠️ Token FCM não disponível');
@@ -112,13 +104,11 @@ class NotificationService {
   void _setupTokenRefreshListener(String userId) {
     _fcm.onTokenRefresh.listen((newToken) {
       debugPrint('🔄 Token FCM atualizado');
-      FirebaseDatabase.instance
-          .ref('Users/$userId/fcmToken')
-          .set(newToken);
+      FirebaseDatabase.instance.ref('Users/$userId/fcmToken').set(newToken);
     });
   }
 
-  /// Remove token do Firebase (usar no logout)
+  /// Remove token do Firebase (chamar no logout)
   Future<void> removeToken(String userId) async {
     try {
       await FirebaseDatabase.instance
@@ -131,11 +121,10 @@ class NotificationService {
   }
 
   // ============================================================
-  // NOTIFICAÇÕES LOCAIS (Android/iOS)
+  // NOTIFICAÇÕES LOCAIS
   // ============================================================
 
   Future<void> _setupLocalNotifications() async {
-    // Canal Android
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'chat_messages',
       'Mensagens de Chat',
@@ -145,13 +134,11 @@ class NotificationService {
       enableVibration: true,
     );
 
-    // Cria o canal no Android
     await _localNotifications
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
 
-    // Configurações de inicialização
     const initializationSettingsAndroid =
         AndroidInitializationSettings('@drawable/ic_notification');
 
@@ -166,7 +153,6 @@ class NotificationService {
       iOS: initializationSettingsIOS,
     );
 
-    // FIXED: InitializationSettings is a positional parameter, not named
     await _localNotifications.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: _onNotificationTap,
@@ -180,29 +166,24 @@ class NotificationService {
   // ============================================================
 
   void _setupMessageHandlers() {
-    // 1. App em FOREGROUND (aberto)
+    // App em FOREGROUND
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      debugPrint('📬 Mensagem recebida (app aberto)');
-      debugPrint('   Título: ${message.notification?.title}');
-      debugPrint('   Corpo: ${message.notification?.body}');
-
+      debugPrint('📬 Mensagem recebida (app aberto): ${message.notification?.title}');
       _showLocalNotification(message);
     });
 
-    // 2. App em BACKGROUND (minimizado) - usuário clica na notificação
+    // App em BACKGROUND — usuário clica na notificação
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       debugPrint('🔔 Notificação clicada (background)');
       _handleNotificationClick(message.data);
     });
 
-    // 3. App estava FECHADO - usuário clica na notificação
+    // App estava FECHADO — usuário clica na notificação
     _checkInitialMessage();
   }
 
-  /// Verifica se app foi aberto por uma notificação
   Future<void> _checkInitialMessage() async {
     final message = await _fcm.getInitialMessage();
-
     if (message != null) {
       debugPrint('🔔 App aberto por notificação');
       _handleNotificationClick(message.data);
@@ -217,8 +198,7 @@ class NotificationService {
     try {
       final title = message.notification?.title ?? 'Nova mensagem';
       final body = message.notification?.body ?? '';
-      
-      // Cria os detalhes da notificação Android
+
       final androidDetails = AndroidNotificationDetails(
         'chat_messages',
         'Mensagens de Chat',
@@ -229,20 +209,17 @@ class NotificationService {
         icon: '@drawable/ic_notification',
       );
 
-      // Cria os detalhes da notificação iOS
       const iosDetails = DarwinNotificationDetails(
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
       );
 
-      // Combina os detalhes
       final notificationDetails = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
 
-      // FIXED: All parameters are positional, not named
       await _localNotifications.show(
         message.hashCode,
         title,
@@ -261,7 +238,6 @@ class NotificationService {
 
   void _onNotificationTap(NotificationResponse response) {
     debugPrint('👆 Notificação local clicada');
-
     if (response.payload != null) {
       final data = _decodePayload(response.payload!);
       _handleNotificationClick(data);
@@ -270,10 +246,7 @@ class NotificationService {
 
   void _handleNotificationClick(Map<String, dynamic> data) {
     final type = data['type'];
-
-    debugPrint('📱 Processando clique na notificação');
-    debugPrint('   Tipo: $type');
-    debugPrint('   Data: $data');
+    debugPrint('📱 Tipo de notificação: $type | Data: $data');
 
     if (type == 'chat') {
       final chatId = data['chatId'];
@@ -286,16 +259,12 @@ class NotificationService {
         debugPrint('⚠️ Callback de navegação não configurado');
       }
     } else if (type == 'request') {
-      // Notificação de solicitação de contato
       final requestType = data['requestType'];
       final profileId = data['profileId'];
       final vacancyId = data['vacancyId'];
-      
-      debugPrint('📩 Solicitação de contato recebida');
-      debugPrint('   Tipo: $requestType');
-      debugPrint('   ProfileId: $profileId');
-      debugPrint('   VacancyId: $vacancyId');
-      
+
+      debugPrint('📩 Solicitação | tipo: $requestType | profile: $profileId | vacancy: $vacancyId');
+
       if (onRequestNotificationTap != null) {
         debugPrint('✅ Abrindo tela de solicitações');
         onRequestNotificationTap!(requestType, profileId, vacancyId);
@@ -306,7 +275,7 @@ class NotificationService {
   }
 
   // ============================================================
-  // HELPERS
+  // HELPERS DE PAYLOAD
   // ============================================================
 
   String _encodePayload(Map<String, dynamic> data) {
@@ -315,15 +284,10 @@ class NotificationService {
 
   Map<String, dynamic> _decodePayload(String payload) {
     final Map<String, dynamic> data = {};
-    final parts = payload.split('|');
-
-    for (final part in parts) {
+    for (final part in payload.split('|')) {
       final kv = part.split(':');
-      if (kv.length == 2) {
-        data[kv[0]] = kv[1];
-      }
+      if (kv.length == 2) data[kv[0]] = kv[1];
     }
-
     return data;
   }
 
@@ -331,27 +295,20 @@ class NotificationService {
   // BADGE (iOS)
   // ============================================================
 
-  /// Atualiza badge count (iOS)
   Future<void> setBadgeCount(int count) async {
     try {
-      // iOS
       await _fcm.setForegroundNotificationPresentationOptions(
         alert: true,
         badge: true,
         sound: true,
       );
-
-      // Android não tem badge nativo, usa outros métodos
       debugPrint('🔢 Badge count atualizado: $count');
     } catch (e) {
       debugPrint('⚠️ Erro ao atualizar badge: $e');
     }
   }
 
-  /// Limpa badge (iOS)
-  Future<void> clearBadge() async {
-    await setBadgeCount(0);
-  }
+  Future<void> clearBadge() async => setBadgeCount(0);
 
   // ============================================================
   // LIMPEZA

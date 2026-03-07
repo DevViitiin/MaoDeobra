@@ -2,6 +2,18 @@
 
 // ignore_for_file: unused_field
 
+// ⚠️ ATENÇÃO: Adicione o campo abaixo ao seu Chat model (chat_model.dart):
+//
+//   final bool blockDialog;
+//
+// E no Chat.fromMap():
+//   blockDialog: map['block_dialog'] as bool? ?? false,
+//
+// E no construtor do Chat:
+//   required this.blockDialog,
+//
+// Sem isso, chat.blockDialog não funcionará.
+
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/core/utils/date_utils.dart';
 import 'package:dartobra_new/models/chat_model/chat_model.dart';
@@ -28,10 +40,11 @@ class ChatListScreen extends StatefulWidget {
   State<ChatListScreen> createState() => _ChatListScreenState();
 }
 
-class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProviderStateMixin {
+class _ChatListScreenState extends State<ChatListScreen>
+    with SingleTickerProviderStateMixin {
   final ChatServiceFinal _chatService = ChatServiceFinal();
   final FirebaseService _firebase = FirebaseService();
-  
+
   late TabController _tabController;
 
   @override
@@ -53,11 +66,11 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: Text(
+        title: const Text(
           'Mensagens',
           style: TextStyle(color: Colors.black87),
         ),
-        iconTheme: IconThemeData(color: Colors.black87),
+        iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
           // Badge indicator TOTAL
           StreamBuilder<BadgeData>(
@@ -65,21 +78,21 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
             builder: (context, snapshot) {
               final badgeData = snapshot.data;
               if (badgeData == null || badgeData.unreadChats == 0) {
-                return SizedBox.shrink();
+                return const SizedBox.shrink();
               }
-
               return Padding(
-                padding: EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.only(right: 8),
                 child: Center(
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.red,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       '${badgeData.unreadChats}',
-                      style: TextStyle(
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -90,14 +103,14 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
               );
             },
           ),
-          
+
           // Connection status
           StreamBuilder<bool>(
             stream: _firebase.connectionState,
             builder: (context, snapshot) {
               final isConnected = snapshot.data ?? false;
               return Padding(
-                padding: EdgeInsets.only(right: 16),
+                padding: const EdgeInsets.only(right: 16),
                 child: Icon(
                   isConnected ? Icons.cloud_done : Icons.cloud_off,
                   color: isConnected ? Colors.green : Colors.red,
@@ -121,33 +134,30 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
               ),
               builder: (context, snapshot) {
                 final unreadCount = snapshot.data ?? 0;
-                
                 return Tab(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.work_outline, size: 20),
-                      SizedBox(width: 8),
-                      Flexible(
+                      const Icon(Icons.work_outline, size: 20),
+                      const SizedBox(width: 8),
+                      const Flexible(
                         child: Text(
                           'Contratante',
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (unreadCount > 0) ...[
-                        SizedBox(width: 6),
+                        const SizedBox(width: 6),
                         Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: Colors.red,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             '$unreadCount',
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
@@ -160,7 +170,7 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
                 );
               },
             ),
-            
+
             // Tab EMPLOYEE com badge
             StreamBuilder<int>(
               stream: BadgeHelper.getUnreadCountByRoleStream(
@@ -169,33 +179,30 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
               ),
               builder: (context, snapshot) {
                 final unreadCount = snapshot.data ?? 0;
-                
                 return Tab(
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.person_outline, size: 20),
-                      SizedBox(width: 8),
-                      Flexible(
+                      const Icon(Icons.person_outline, size: 20),
+                      const SizedBox(width: 8),
+                      const Flexible(
                         child: Text(
                           'Funcionário',
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       if (unreadCount > 0) ...[
-                        SizedBox(width: 6),
+                        const SizedBox(width: 6),
                         Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: Colors.red,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             '$unreadCount',
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
@@ -216,15 +223,15 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
         children: [
           // Tab 1: Chats como CONTRATANTE
           _ChatListTab(
-            key: ValueKey('contractor'),
+            key: const ValueKey('contractor'),
             userId: widget.userId,
             roleFilter: 'contractor',
             onOpenChat: _openChat,
           ),
-          
+
           // Tab 2: Chats como FUNCIONÁRIO
           _ChatListTab(
-            key: ValueKey('employee'),
+            key: const ValueKey('employee'),
             userId: widget.userId,
             roleFilter: 'employee',
             onOpenChat: _openChat,
@@ -235,6 +242,12 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
   }
 
   void _openChat(Chat chat, String roleFilter) async {
+    // ── Bloqueado: exibe popup e não navega ──────────────────────────────────
+    if (chat.blockDialog) {
+      _showBlockedDialog(context);
+      return;
+    }
+
     final isContractor = roleFilter == 'contractor';
     final otherUserId = isContractor ? chat.employeeId : chat.contractorId;
 
@@ -267,7 +280,7 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
       print('❌ Erro ao abrir chat: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+          const SnackBar(
             content: Text('Erro ao abrir conversa. Tente novamente.'),
             backgroundColor: Colors.red,
           ),
@@ -275,10 +288,100 @@ class _ChatListScreenState extends State<ChatListScreen> with SingleTickerProvid
       }
     }
   }
+
+  /// Popup exibido ao clicar em chat bloqueado
+  void _showBlockedDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Ícone
+              Container(
+                width: 68,
+                height: 68,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDC2626).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.lock_outline_rounded,
+                  size: 34,
+                  color: Color(0xFFDC2626),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Título
+              const Text(
+                'Conversa bloqueada',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1C1C1E),
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // Corpo
+              Text(
+                'Esta conversa foi bloqueada devido a denúncias envolvendo uma das partes.\n\n'
+                'Para solicitar a reversão do bloqueio, entre em contato com o nosso suporte.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: Colors.grey.shade600,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 28),
+
+              // Botão fechar
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1C1C1E),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                  child: const Text(
+                    'Entendi',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-// ✅ Widget separado para cada tab - evita conflito de streams
-class _ChatListTab extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Tab de lista de chats (normal + seção "Bloqueados")
+// ─────────────────────────────────────────────────────────────────────────────
+class _ChatListTab extends StatefulWidget {
   final String userId;
   final String roleFilter;
   final Function(Chat, String) onOpenChat;
@@ -291,11 +394,18 @@ class _ChatListTab extends StatelessWidget {
   }) : super(key: key);
 
   @override
+  State<_ChatListTab> createState() => _ChatListTabState();
+}
+
+class _ChatListTabState extends State<_ChatListTab> {
+  bool _blockedExpanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final chatService = ChatServiceFinal();
 
     return StreamBuilder<List<Chat>>(
-      stream: chatService.getChatListStream(userId, roleFilter),
+      stream: chatService.getChatListStream(widget.userId, widget.roleFilter),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           print('❌ Erro no stream de chats: ${snapshot.error}');
@@ -303,7 +413,7 @@ class _ChatListTab extends StatelessWidget {
         }
 
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
+          return const Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -311,41 +421,106 @@ class _ChatListTab extends StatelessWidget {
                 SizedBox(height: 16),
                 Text(
                   'Carregando conversas...',
-                  style: TextStyle(color: Colors.grey[600]),
+                  style: TextStyle(color: Colors.grey),
                 ),
               ],
             ),
           );
         }
 
-        final chats = snapshot.data ?? [];
+        final allChats = snapshot.data ?? [];
 
-        if (chats.isEmpty) {
-          return _buildEmptyState(context, roleFilter);
+        // Separa chats normais e bloqueados
+        final normalChats =
+            allChats.where((c) => !c.blockDialog).toList();
+        final blockedChats =
+            allChats.where((c) => c.blockDialog).toList();
+
+        if (allChats.isEmpty) {
+          return _buildEmptyState(context, widget.roleFilter);
         }
 
         return RefreshIndicator(
           onRefresh: () async {
-            await Future.delayed(Duration(milliseconds: 500));
+            await Future.delayed(const Duration(milliseconds: 500));
           },
-          child: ListView.separated(
-            padding: EdgeInsets.symmetric(vertical: 8),
-            itemCount: chats.length,
-            separatorBuilder: (context, index) => Divider(
-              height: 1,
-              indent: 72,
-              endIndent: 16,
-            ),
-            itemBuilder: (context, index) {
-              final chat = chats[index];
-              return _ChatListTile(
-                key: ValueKey(chat.chatId),
-                chat: chat,
-                currentUserId: userId,
-                userRole: roleFilter,
-                onTap: () => onOpenChat(chat, roleFilter),
-              );
-            },
+          child: ListView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            children: [
+              // ── Chats normais ──────────────────────────────────────────
+              if (normalChats.isEmpty && blockedChats.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 32),
+                  child: Column(
+                    children: [
+                      Icon(Icons.chat_bubble_outline,
+                          size: 56, color: Colors.grey.shade300),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Nenhuma conversa ativa',
+                        style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500),
+                      ),
+                    ],
+                  ),
+                ),
+
+              ...normalChats.asMap().entries.map((entry) {
+                final index = entry.key;
+                final chat = entry.value;
+                return Column(
+                  children: [
+                    _ChatListTile(
+                      key: ValueKey(chat.chatId),
+                      chat: chat,
+                      currentUserId: widget.userId,
+                      userRole: widget.roleFilter,
+                      isBlocked: false,
+                      onTap: () => widget.onOpenChat(chat, widget.roleFilter),
+                    ),
+                    if (index < normalChats.length - 1)
+                      const Divider(height: 1, indent: 72, endIndent: 16),
+                  ],
+                );
+              }),
+
+              // ── Seção "Bloqueados" (só aparece se houver algum) ────────
+              if (blockedChats.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _BlockedSectionHeader(
+                  count: blockedChats.length,
+                  expanded: _blockedExpanded,
+                  onToggle: () =>
+                      setState(() => _blockedExpanded = !_blockedExpanded),
+                ),
+                if (_blockedExpanded) ...[
+                  ...blockedChats.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final chat = entry.value;
+                    return Column(
+                      children: [
+                        _ChatListTile(
+                          key: ValueKey('blocked_${chat.chatId}'),
+                          chat: chat,
+                          currentUserId: widget.userId,
+                          userRole: widget.roleFilter,
+                          isBlocked: true,
+                          onTap: () =>
+                              widget.onOpenChat(chat, widget.roleFilter),
+                        ),
+                        if (index < blockedChats.length - 1)
+                          const Divider(
+                              height: 1, indent: 72, endIndent: 16),
+                      ],
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            ],
           ),
         );
       },
@@ -354,7 +529,6 @@ class _ChatListTab extends StatelessWidget {
 
   Widget _buildEmptyState(BuildContext context, String role) {
     final isContractor = role == 'contractor';
-    
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -364,7 +538,7 @@ class _ChatListTab extends StatelessWidget {
             size: 80,
             color: Colors.grey[300],
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           Text(
             'Nenhuma conversa ainda',
             style: TextStyle(
@@ -373,18 +547,15 @@ class _ChatListTab extends StatelessWidget {
               fontWeight: FontWeight.w500,
             ),
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: 48),
+            padding: const EdgeInsets.symmetric(horizontal: 48),
             child: Text(
               isContractor
                   ? 'Suas conversas como contratante aparecerão aqui'
                   : 'Suas conversas como funcionário aparecerão aqui',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[500],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
             ),
           ),
         ],
@@ -395,13 +566,13 @@ class _ChatListTab extends StatelessWidget {
   Widget _buildErrorWidget(BuildContext context, String error) {
     return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red),
-            SizedBox(height: 16),
-            Text(
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            const Text(
               'Erro ao carregar conversas',
               style: TextStyle(
                 fontSize: 18,
@@ -409,14 +580,11 @@ class _ChatListTab extends StatelessWidget {
                 color: Colors.red,
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
               error,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
           ],
         ),
@@ -425,11 +593,116 @@ class _ChatListTab extends StatelessWidget {
   }
 }
 
-// ✅ WIDGET OTIMIZADO - StatelessWidget para evitar problemas de stream
+// ─────────────────────────────────────────────────────────────────────────────
+// Header da seção "Bloqueados" (estilo WhatsApp Arquivados)
+// ─────────────────────────────────────────────────────────────────────────────
+class _BlockedSectionHeader extends StatelessWidget {
+  final int count;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  const _BlockedSectionHeader({
+    required this.count,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onToggle,
+        child: Container(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            border: Border(
+              top: BorderSide(color: Colors.grey.shade200),
+              bottom: BorderSide(
+                  color: expanded
+                      ? Colors.grey.shade200
+                      : Colors.transparent),
+            ),
+          ),
+          child: Row(
+            children: [
+              // Ícone cadeado
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDC2626).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.lock_outline_rounded,
+                  size: 18,
+                  color: Color(0xFFDC2626),
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Label + contador
+              Expanded(
+                child: Row(
+                  children: [
+                    const Text(
+                      'Bloqueados',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1C1C1E),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDC2626).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$count',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFDC2626),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Seta
+              AnimatedRotation(
+                turns: expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Colors.grey.shade500,
+                  size: 22,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tile individual de chat
+// ─────────────────────────────────────────────────────────────────────────────
 class _ChatListTile extends StatelessWidget {
   final Chat chat;
   final String currentUserId;
   final String userRole;
+  final bool isBlocked;
   final VoidCallback onTap;
 
   const _ChatListTile({
@@ -437,6 +710,7 @@ class _ChatListTile extends StatelessWidget {
     required this.chat,
     required this.currentUserId,
     required this.userRole,
+    required this.isBlocked,
     required this.onTap,
   }) : super(key: key);
 
@@ -449,8 +723,9 @@ class _ChatListTile extends StatelessWidget {
     final otherParticipant = chat.participants[otherRole];
 
     if (otherParticipant == null) {
-      print('⚠️ Participante não encontrado para role: $otherRole no chat: ${chat.chatId}');
-      return SizedBox.shrink();
+      print(
+          '⚠️ Participante não encontrado para role: $otherRole no chat: ${chat.chatId}');
+      return const SizedBox.shrink();
     }
 
     return Container(
@@ -459,20 +734,21 @@ class _ChatListTile extends StatelessWidget {
         stream: UserLookupService().getUserDataStream(otherUserId),
         builder: (context, userSnapshot) {
           if (userSnapshot.hasError) {
-            print('❌ Erro ao carregar usuário $otherUserId: ${userSnapshot.error}');
             return _buildErrorTile(context);
           }
 
           final userData = userSnapshot.data ??
-              UserData(
-                name: 'Usuário',
-                avatar: '',
-                profession: '',
-              );
+              UserData(name: 'Usuário', avatar: '', profession: '');
 
-          // ✅ Stream do unreadCount
+          // ── Bloqueado: tile simplificado sem unread count ──────────────
+          if (isBlocked) {
+            return _buildBlockedTile(context, userData);
+          }
+
+          // ── Normal: com unread count stream ───────────────────────────
           return StreamBuilder<int>(
-            stream: ChatServiceFinal().getUnreadCountStream(chat.chatId, userRole),
+            stream:
+                ChatServiceFinal().getUnreadCountStream(chat.chatId, userRole),
             initialData: 0,
             builder: (context, unreadSnapshot) {
               final unreadCount = unreadSnapshot.data ?? 0;
@@ -482,10 +758,10 @@ class _ChatListTile extends StatelessWidget {
                 child: InkWell(
                   onTap: onTap,
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
-                        // Avatar com status online
                         OnlineStatusBadge(
                           isOnline: otherParticipant.isOnline,
                           child: CircleAvatar(
@@ -495,19 +771,16 @@ class _ChatListTile extends StatelessWidget {
                                 ? NetworkImage(userData.avatar)
                                 : null,
                             child: userData.avatar.isEmpty
-                                ? Icon(Icons.person,
+                                ? const Icon(Icons.person,
                                     color: Colors.white, size: 28)
                                 : null,
                           ),
                         ),
-                        SizedBox(width: 12),
-
-                        // Conteúdo do chat
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              // Nome e horário
                               Row(
                                 children: [
                                   Expanded(
@@ -524,7 +797,7 @@ class _ChatListTile extends StatelessWidget {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  SizedBox(width: 8),
+                                  const SizedBox(width: 8),
                                   Text(
                                     _formatTime(chat.metadata.lastTimestamp),
                                     style: TextStyle(
@@ -534,19 +807,14 @@ class _ChatListTile extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              SizedBox(height: 4),
-
-                              // Última mensagem e badge
+                              const SizedBox(height: 4),
                               Row(
                                 children: [
                                   if (chat.metadata.lastSender == userRole)
-                                    Padding(
+                                    const Padding(
                                       padding: EdgeInsets.only(right: 4),
-                                      child: Icon(
-                                        Icons.done_all,
-                                        size: 16,
-                                        color: Colors.blue,
-                                      ),
+                                      child: Icon(Icons.done_all,
+                                          size: 16, color: Colors.blue),
                                     ),
                                   Expanded(
                                     child: Text(
@@ -567,21 +835,20 @@ class _ChatListTile extends StatelessWidget {
                                     ),
                                   ),
                                   if (unreadCount > 0) ...[
-                                    SizedBox(width: 8),
+                                    const SizedBox(width: 8),
                                     Container(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
                                       decoration: BoxDecoration(
                                         color: Theme.of(context).primaryColor,
-                                        borderRadius: BorderRadius.circular(12),
+                                        borderRadius:
+                                            BorderRadius.circular(12),
                                       ),
                                       child: Text(
                                         unreadCount > 99
                                             ? '99+'
                                             : '$unreadCount',
-                                        style: TextStyle(
+                                        style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 11,
                                           fontWeight: FontWeight.bold,
@@ -606,18 +873,109 @@ class _ChatListTile extends StatelessWidget {
     );
   }
 
+  // Tile com visual "bloqueado" — acinzentado + ícone cadeado
+  Widget _buildBlockedTile(BuildContext context, UserData userData) {
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        child: Opacity(
+          opacity: 0.55,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                // Avatar sem badge de online (bloqueado não mostra status)
+                Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: Colors.grey[300],
+                      backgroundImage: userData.avatar.isNotEmpty
+                          ? NetworkImage(userData.avatar)
+                          : null,
+                      child: userData.avatar.isEmpty
+                          ? const Icon(Icons.person,
+                              color: Colors.white, size: 28)
+                          : null,
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDC2626),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(Icons.lock_rounded,
+                            size: 9, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              userData.name,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.black87,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _formatTime(chat.metadata.lastTimestamp),
+                            style:
+                                TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Conversa bloqueada',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[500],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildErrorTile(BuildContext context) {
     return Container(
       color: Colors.white,
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
         children: [
           CircleAvatar(
             radius: 28,
             backgroundColor: Colors.grey[300],
-            child: Icon(Icons.error_outline, color: Colors.red),
+            child: const Icon(Icons.error_outline, color: Colors.red),
           ),
-          SizedBox(width: 12),
+          const SizedBox(width: 12),
           Expanded(
             child: Text(
               'Erro ao carregar conversa',
@@ -633,7 +991,6 @@ class _ChatListTile extends StatelessWidget {
     try {
       return ChatDateUtils.formatChatListTime(timestamp);
     } catch (e) {
-      print('❌ Erro ao formatar timestamp: $e');
       return '';
     }
   }

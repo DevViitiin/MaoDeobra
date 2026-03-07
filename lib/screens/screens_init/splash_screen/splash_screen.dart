@@ -1,14 +1,12 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 import 'dart:math' as math;
+import 'package:dartobra_new/core/constants/user_repository.dart';
+import 'package:dartobra_new/screens/screens_init/login_screen/login_controller.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:dartobra_new/screens/app_home/home_screen/home_screen.dart';
-// ignore: unused_import
-import 'package:dartobra_new/screens/screens_init/login_screen/login_screen.dart';
-import 'package:dartobra_new/screens/actions_administrave/ban_screen/ban_screen.dart';
-import 'package:dartobra_new/screens/actions_administrave/suspension_screen/suspension_screen.dart';
-import 'package:dartobra_new/screens/actions_administrave/warning_screen/warning_screen.dart';
-import 'package:intl/intl.dart';
+import 'package:flutter/material.dart';
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
+
 
 class SplashPage extends StatefulWidget {
   const SplashPage({Key? key}) : super(key: key);
@@ -18,248 +16,94 @@ class SplashPage extends StatefulWidget {
 }
 
 class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
-  late AnimationController _logoController;
-  late AnimationController _pulseController;
-  late AnimationController _rotateController;
-  late Animation<double> _logoAnimation;
-  late Animation<double> _pulseAnimation;
+  late final AnimationController _logoController;
+  late final AnimationController _pulseController;
+  late final AnimationController _rotateController;
+  late final Animation<double> _logoAnimation;
+  late final Animation<double> _pulseAnimation;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final db = FirebaseDatabase.instance.ref();
+  final UserRepository _repo = UserRepository();
+  final LoginController _loginCtrl = LoginController();
+
+  // ── Ciclo de vida ──────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
-    
-    // Animação de fade in + scale da logo
-    _logoController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    );
-    _logoAnimation = CurvedAnimation(
-      parent: _logoController,
-      curve: Curves.easeOutBack,
-    );
-    
-    // Animação de pulso do loading
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-    
-    // Animação de rotação
-    _rotateController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat();
-    
-    _logoController.forward();
+    _setupAnimations();
+    _requestPermissions();
     _initApp();
   }
+  Future<void> _requestPermissions() async {
+    if (!Platform.isAndroid) return;
 
-  // ✅ Função helper para converter Map do Firebase recursivamente
-  Map<String, dynamic> _convertMap(dynamic map) {
-    if (map == null) return {};
-    if (map is Map<String, dynamic>) return map;
-    if (map is Map) {
-      return Map<String, dynamic>.from(
-        map.map((key, value) {
-          if (value is Map) {
-            return MapEntry(key.toString(), _convertMap(value));
-          } else if (value is List) {
-            return MapEntry(
-              key.toString(),
-              value.map((e) => e is Map ? _convertMap(e) : e).toList(),
-            );
-          }
-          return MapEntry(key.toString(), value);
-        }),
-      );
-    }
-    return {};
-  }
-
-  Future<Map<String, dynamic>?> _getUserData(String uid) async {
     try {
-      final userRef = db.child('Users').child(uid);
-      final data = await userRef.get();
+      final sdkInt = (await DeviceInfoPlugin().androidInfo).version.sdkInt;
 
-      if (data.exists && data.value != null) {
-        final value = data.value;
+      // Monta lista de permissões conforme versão
+      final permissions = <Permission>[
+        Permission.camera,
+        if (sdkInt >= 33) Permission.photos,        // Android 13+
+        if (sdkInt >= 33) Permission.notification,  // Android 13+
+        if (sdkInt < 33) Permission.storage,        // Android ≤12
+      ];
 
-        if (value is Map) {
-          final userData = _convertMap(value);
-          print('✅ Usuário encontrado: $userData');
-          return userData;
-        } else {
-          print('❌ Valor não é um Map, é: ${value.runtimeType}');
-          return null;
-        }
-      }
+      // Pede todas de uma vez
+      final statuses = await permissions.request();
 
-      print('❌ Usuário não encontrado no banco de dados');
-      return null;
-    } catch (e, stackTrace) {
-      print('❌ Erro ao buscar usuário: $e');
-      print('Stack trace: $stackTrace');
-      return null;
-    }
-  }
+      // Loga resultado
+      statuses.forEach((permission, status) {
+        debugPrint('🔐 $permission → $status');
+      });
 
-  void _navigateToScreen(Map<String, dynamic> userData, String localId) {
-    final ban = userData['ban'];
-    final suspension = userData['suspension'];
-    final warnings = userData['warning'];
+      // Se alguma vital estiver permanentemente negada, abre configurações
+      final cameraDenied =
+          statuses[Permission.camera]?.isPermanentlyDenied ?? false;
+      final storageDenied = sdkInt >= 33
+          ? (statuses[Permission.photos]?.isPermanentlyDenied ?? false)
+          : (statuses[Permission.storage]?.isPermanentlyDenied ?? false);
 
-    if (ban != null &&
-        ban is Map &&
-        ban.values.any(
-          (value) => value != null && value.toString().isNotEmpty,
-        )) {
-      print('🚫 Usuário banido - Navegando para BanScreen');
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => BanScreen(
-            occurrenceDate: ban['data'],
-            reason: ban['motive'],
-            description: ban['description'],
-          ),
-        ),
-      );
-    } else if (suspension != null &&
-        suspension is Map &&
-        suspension.values.any(
-          (value) => value != null && value.toString().isNotEmpty,
-        )) {
-      print('⏸️ Usuário suspenso - Navegando para SuspensionScreen');
-      final dataInicio = suspension['init'];
-      final dataFim = suspension['end'];
-      DateTime fim = DateFormat('dd/MM/yyyy').parse(dataFim);
-      DateTime inicio = DateFormat('dd/MM/yyyy').parse(dataInicio);
-      int diferencaDias = fim.difference(inicio).inDays;
-
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => SuspensionScreen(
-            reason: suspension['motive'],
-            description: suspension['description'],
-            startDate: suspension['init'],
-            endDate: suspension['end'],
-            occurrenceDate: suspension['data'],
-            daysRemaining: diferencaDias,
-          ),
-        ),
-      );
-    } else if (warnings != null &&
-        warnings is Map &&
-        warnings.values.any(
-          (value) => value != null && value.toString().isNotEmpty,
-        )) {
-      print('⚠️ Usuário com advertência - Navegando para WarningScreen');
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => WarningScreen(
-            reason: warnings['motive'],
-            description: warnings['description'],
-            local_id: localId,
-            occurrenceDate: warnings['data'],
-            type: warnings['type']?.toString() ?? 'contractor',
-            userData: userData,
-          ),
-        ),
-      );
-    } else {
-      // ✅ Extrair e converter dados corretamente do Map
-      final dataWorker = _convertMap(userData['data_worker']);
-      final dataContractor = _convertMap(userData['data_contractor']);
-
-      // ✅ Converter age de forma segura
-      int age = 0;
-      if (userData['age'] != null) {
-        if (userData['age'] is int) {
-          age = userData['age'];
-        } else if (userData['age'] is String) {
-          age = int.tryParse(userData['age']) ?? 0;
-        } else if (userData['age'] is double) {
-          age = (userData['age'] as double).toInt();
-        }
-      }
-
-      print('🏠 Navegando para HomeScreen com dados atualizados');
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => HomeScreen(
-            local_id: localId,
-            userName: userData['Name']?.toString() ?? '',
-            userEmail: userData['email']?.toString() ?? '',
-            userPhone: userData['telefone']?.toString() ?? '',
-            contact_email: userData['email_contact']?.toString() ?? '',
-            legalType: userData['legalType']?.toString() ?? 'PF',
-            userCity: userData['city']?.toString() ?? '',
-            userState: userData['state']?.toString() ?? '',
-            age: age,
-            userAvatar: userData['avatar']?.toString() ?? '',
-            finished_basic: userData['finished_basic'] == true,
-            finished_professional: userData['finished_professional'] == true,
-            finished_contact: userData['finished_contact'] == true,
-            isActive: userData['isActive'] == true,
-            activeMode: userData['activeMode']?.toString() ?? 'worker',
-            dataWorker: dataWorker,
-            dataContractor: dataContractor,
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _initApp() async {
-    try {
-      // Aguarda as animações iniciais
-      await Future.delayed(const Duration(milliseconds: 1500));
-
-      // Verifica se há usuário logado
-      final User? currentUser = _auth.currentUser;
-
-      if (currentUser != null) {
-        print('✅ Usuário já está logado: ${currentUser.uid}');
-        
-        // Busca dados atualizados do usuário no Firebase
-        final userData = await _getUserData(currentUser.uid);
-
-        if (userData != null && mounted) {
-          // Navega para a tela apropriada com dados atualizados
-          _navigateToScreen(userData, currentUser.uid);
-        } else {
-          // Se não encontrou dados, faz logout e vai para login
-          print('⚠️ Dados do usuário não encontrados, fazendo logout...');
-          await _auth.signOut();
-          if (mounted) {
-            Navigator.pushReplacementNamed(context, '/LoginScreen');
-          }
-        }
-      } else {
-        // Não há usuário logado, vai para tela de login
-        print('❌ Nenhum usuário logado');
-        if (mounted) {
-          Navigator.pushReplacementNamed(context, '/LoginScreen');
-        }
+      if (cameraDenied || storageDenied) {
+        await _showPermissionsDialog();
       }
     } catch (e) {
-      print('❌ Erro ao inicializar app: $e');
-      // Em caso de erro, vai para login
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/LoginScreen');
-      }
+      debugPrint('⚠️ Erro ao solicitar permissões: $e');
     }
   }
-
+  Future<void> _showPermissionsDialog() async {
+  await showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Permissões necessárias'),
+      content: const Text(
+        'Câmera e acesso a fotos são essenciais para o funcionamento do app. '
+        'Por favor, habilite nas configurações.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text('Agora não', style: TextStyle(color: Colors.grey[600])),
+        ),
+        ElevatedButton(
+          onPressed: () async {
+            Navigator.pop(ctx);
+            await openAppSettings(); // leva para as configurações do app
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF3B82F6),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+          ),
+          child: const Text('Abrir Configurações',
+              style: TextStyle(color: Colors.white)),
+        ),
+      ],
+    ),
+  );
+  }
   @override
   void dispose() {
     _logoController.dispose();
@@ -268,11 +112,78 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  // ── Animações ──────────────────────────────────────────────────────────────
+
+  void _setupAnimations() {
+    _logoController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _logoAnimation = CurvedAnimation(
+      parent: _logoController,
+      curve: Curves.easeOutBack,
+    );
+
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    _rotateController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat();
+
+    _logoController.forward();
+  }
+
+  // ── Inicialização ──────────────────────────────────────────────────────────
+
+  Future<void> _initApp() async {
+    try {
+      await Future.delayed(const Duration(milliseconds: 1500));
+
+      final User? currentUser = _auth.currentUser;
+
+      if (currentUser == null) {
+        print('❌ Nenhum usuário logado');
+        _goToLogin();
+        return;
+      }
+
+      print('✅ Usuário logado: ${currentUser.uid}');
+
+      final user = await _repo.fetchUser(currentUser.uid);
+
+      if (user == null) {
+        print('⚠️ Dados do usuário não encontrados — fazendo logout');
+        await _auth.signOut();
+        _goToLogin();
+        return;
+      }
+
+      if (!mounted) return;
+      await _loginCtrl.navigateToNextScreen(context, user);
+    } catch (e) {
+      print('❌ Erro ao inicializar app: $e');
+      _goToLogin();
+    }
+  }
+
+  void _goToLogin() {
+    if (mounted) Navigator.pushReplacementNamed(context, '/LoginScreen');
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -310,7 +221,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                 ),
               ),
             ),
-            
+
             // Conteúdo principal
             Center(
               child: Column(
@@ -342,9 +253,9 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 40),
-                  
+
                   // Nome do app
                   FadeTransition(
                     opacity: _logoAnimation,
@@ -378,9 +289,9 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 60),
-                  
+
                   // Loading indicator animado
                   AnimatedBuilder(
                     animation: _rotateController,
@@ -419,7 +330,7 @@ class _SplashPageState extends State<SplashPage> with TickerProviderStateMixin {
                 ],
               ),
             ),
-            
+
             // Versão do app no rodapé
             Positioned(
               bottom: 40,

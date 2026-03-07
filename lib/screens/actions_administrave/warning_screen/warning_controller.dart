@@ -1,30 +1,17 @@
-import 'package:firebase_database/firebase_database.dart';
+import 'package:dartobra_new/core/constants/user_repository.dart';
+import 'package:dartobra_new/models/user_model.dart';
 
 class WarningController {
-  String local_id; // ✅ String
-  String type;     
-  
-  WarningController({required this.local_id, required this.type});
+  final String localId;
+  final UserRepository _repo = UserRepository();
 
-  Future<bool> patchUserData(Map<String, dynamic> updates) async {
-    DatabaseReference ref;
-    
-    if (type == 'contractor') {
-      ref = FirebaseDatabase.instance.ref().child('Users/$local_id');
-    } else if (type == 'employee') {
-      ref = FirebaseDatabase.instance.ref().child('Funcionarios/$local_id');
-    } else {
-      print('Tipo de usuário inválido: $type');
-      return false;
-    }
+  WarningController({required this.localId});
 
-    try {
-      await ref.update(updates);
-      print('✅ Advertência removida com sucesso');
-      return true;
-    } catch (e) {
-      print('❌ Erro ao atualizar: $e');
-      return false;
-    }
+  /// Remove a advertência do Firebase e retorna o [UserModel] atualizado.
+  /// Retorna null se algo falhar.
+  Future<UserModel?> acknowledgeWarning() async {
+    final cleared = await _repo.clearWarning(localId);
+    if (!cleared) return null;
+    return _repo.fetchUser(localId);
   }
 }

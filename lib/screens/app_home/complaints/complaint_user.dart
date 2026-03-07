@@ -28,6 +28,7 @@ class _ComplaintUserState extends State<ComplaintUser> {
   final List<String> _reportReasons = [
     'Perfil falso ou fraudulento',
     'Comportamento inadequado',
+    'Usuario menor de idade',
     'Assédio ou bullying',
     'Linguagem ofensiva',
     'Fotos inapropriadas',
