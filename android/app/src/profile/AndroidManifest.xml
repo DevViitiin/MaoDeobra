@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.vstecnology.dartobranew">
+    package="com.maodeobraoficial.app">
 
     <!-- PERMISSÕES (sempre fora do <application>) -->
     <uses-permission android:name="android.permission.INTERNET"/>

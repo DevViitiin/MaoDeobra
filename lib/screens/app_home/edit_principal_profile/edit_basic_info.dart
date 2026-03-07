@@ -1,9 +1,8 @@
 import 'dart:io';
 import 'package:dartobra_new/services/services_storage/service_storage.dart';
-import 'package:device_info_plus/device_info_plus.dart';
+import 'package:dartobra_new/widgets/permissions/permissions_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:dartobra_new/screens/app_home/edit_principal_profile/components.dart';
 
@@ -88,90 +87,6 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
     super.dispose();
   }
 
-  // ✅ CORRIGIDO: diferencia Android 13+ (photos) de Android ≤12 (storage)
-  Future<bool> _checkAndRequestPermissions(ImageSource source) async {
-    if (source == ImageSource.camera) {
-      final status = await Permission.camera.request();
-
-      if (status.isPermanentlyDenied) {
-        _showPermissionDeniedDialog('câmera');
-        return false;
-      }
-
-      return status.isGranted;
-    }
-
-    // Galeria
-    if (Platform.isIOS) {
-      final status = await Permission.photos.request();
-      if (status.isPermanentlyDenied) {
-        _showPermissionDeniedDialog('fotos');
-        return false;
-      }
-      return status.isGranted;
-    }
-
-    // Android — verifica versão do SDK
-    final androidInfo = await DeviceInfoPlugin().androidInfo;
-    final sdkInt = androidInfo.version.sdkInt;
-
-    if (sdkInt >= 33) {
-      // Android 13+ → READ_MEDIA_IMAGES
-      final status = await Permission.photos.request();
-      if (status.isPermanentlyDenied) {
-        _showPermissionDeniedDialog('fotos');
-        return false;
-      }
-      return status.isGranted;
-    } else {
-      // Android 12 e abaixo → READ_EXTERNAL_STORAGE
-      final status = await Permission.storage.request();
-      if (status.isPermanentlyDenied) {
-        _showPermissionDeniedDialog('armazenamento');
-        return false;
-      }
-      return status.isGranted;
-    }
-  }
-
-  /// Exibe dialog quando permissão está permanentemente negada,
-  /// oferecendo abrir as configurações do app.
-  void _showPermissionDeniedDialog(String permissao) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Permissão necessária'),
-        content: Text(
-          'O acesso à $permissao foi negado permanentemente. '
-          'Habilite nas configurações do app para continuar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              openAppSettings();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF3B82F6),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text(
-              'Abrir Configurações',
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _removeFocusCompletely() {
     _nameFocus.unfocus();
     FocusScope.of(context).unfocus();
@@ -214,10 +129,8 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
             ),
             const Divider(),
             ListTile(
-              leading:
-                  const Icon(Icons.photo_library, color: Colors.blue, size: 28),
-              title: const Text('Escolher da Galeria',
-                  style: TextStyle(fontSize: 16)),
+              leading: const Icon(Icons.photo_library, color: Colors.blue, size: 28),
+              title: const Text('Escolher da Galeria', style: TextStyle(fontSize: 16)),
               onTap: () async {
                 Navigator.pop(context);
                 await _pickImageFromSource(ImageSource.gallery);
@@ -227,8 +140,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.delete, color: Colors.red, size: 28),
-                title: const Text('Remover Foto',
-                    style: TextStyle(color: Colors.red)),
+                title: const Text('Remover Foto', style: TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.pop(context);
                   setState(() {
@@ -245,12 +157,42 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
   }
 
   Future<void> _pickImageFromSource(ImageSource source) async {
-    final hasPermission = await _checkAndRequestPermissions(source);
-    if (!hasPermission) {
-      _showSnackBar('Permissão negada', isError: true);
+    final bool isCamera = source == ImageSource.camera;
+    final String label = isCamera ? 'câmera' : 'galeria';
+    final String reason = isCamera
+        ? 'para tirar sua foto de perfil'
+        : 'para escolher sua foto de perfil';
+
+    // 1️⃣ Checa/solicita permissão
+    var result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
+
+    // 2️⃣ Negada (não permanente) → oferece tentar de novo UMA vez
+    if (result == PermissionResult.denied) {
+      final wantsToRetry = await PermissionUtil.showPermissionDialog(
+        context: context,
+        result: result,
+        permissionLabel: label,
+        usageReason: reason,
+      );
+
+      if (!wantsToRetry) return;
+
+      result = await PermissionUtil.checkAndRequest(isCamera: isCamera);
+    }
+
+    // 3️⃣ Ainda sem permissão → mostra diálogo correto
+    // (permanentlyDenied abre configurações, denied avisa e encerra)
+    if (result != PermissionResult.granted) {
+      await PermissionUtil.showPermissionDialog(
+        context: context,
+        result: result,
+        permissionLabel: label,
+        usageReason: reason,
+      );
       return;
     }
 
+    // 4️⃣ Permissão concedida → abre picker
     try {
       final XFile? image = await _picker.pickImage(
         source: source,
@@ -346,8 +288,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
         'city': selectedCity,
         'state': selectedState,
         'finished_basic': true,
-        'avatar':
-            (avatarUrl != null && avatarUrl.isNotEmpty) ? avatarUrl : '',
+        'avatar': (avatarUrl != null && avatarUrl.isNotEmpty) ? avatarUrl : '',
       };
 
       await _database.child('Users').child(widget.local_id).update(updates);
@@ -372,8 +313,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
       Navigator.pop(context, updatedData);
     } catch (e) {
       debugPrint('Erro ao salvar: $e');
-      _showSnackBar('Erro ao salvar alterações. Tente novamente.',
-          isError: true);
+      _showSnackBar('Erro ao salvar alterações. Tente novamente.', isError: true);
     } finally {
       if (mounted) {
         setState(() {
@@ -389,25 +329,21 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         content: Text(message),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('Cancelar',
-                style: TextStyle(color: Colors.grey[600])),
+            child: Text('Cancelar', style: TextStyle(color: Colors.grey[600])),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3B82F6),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text('Continuar',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Continuar', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -421,17 +357,14 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
       SnackBar(
         content: Row(
           children: [
-            Icon(isError ? Icons.error : Icons.check_circle,
-                color: Colors.white),
+            Icon(isError ? Icons.error : Icons.check_circle, color: Colors.white),
             const SizedBox(width: 12),
-            Expanded(
-                child: Text(message, style: const TextStyle(fontSize: 14))),
+            Expanded(child: Text(message, style: const TextStyle(fontSize: 14))),
           ],
         ),
         backgroundColor: isError ? Colors.red : Colors.green,
         behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         duration: Duration(seconds: isError ? 3 : 2),
       ),
     );
@@ -454,8 +387,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
           ),
           title: const Text(
             'Informações Básicas',
-            style:
-                TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+            style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
           ),
         ),
         body: Stack(
@@ -483,8 +415,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                               shape: BoxShape.circle,
                               color: const Color(0xFF3B82F6).withOpacity(0.1),
                               border: Border.all(
-                                color:
-                                    const Color(0xFF3B82F6).withOpacity(0.3),
+                                color: const Color(0xFF3B82F6).withOpacity(0.3),
                                 width: 2,
                               ),
                               image: _profileImage != null
@@ -494,16 +425,13 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                                     )
                                   : _currentAvatarUrl != null
                                       ? DecorationImage(
-                                          image:
-                                              NetworkImage(_currentAvatarUrl!),
+                                          image: NetworkImage(_currentAvatarUrl!),
                                           fit: BoxFit.cover,
                                         )
                                       : null,
                             ),
-                            child: (_profileImage == null &&
-                                    _currentAvatarUrl == null)
-                                ? const Icon(Icons.person,
-                                    size: 60, color: Color(0xFF3B82F6))
+                            child: (_profileImage == null && _currentAvatarUrl == null)
+                                ? const Icon(Icons.person, size: 60, color: Color(0xFF3B82F6))
                                 : null,
                           ),
                         ),
@@ -517,8 +445,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                               decoration: BoxDecoration(
                                 color: const Color(0xFF3B82F6),
                                 shape: BoxShape.circle,
-                                border:
-                                    Border.all(color: Colors.white, width: 3),
+                                border: Border.all(color: Colors.white, width: 3),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withOpacity(0.2),
@@ -527,8 +454,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                                   ),
                                 ],
                               ),
-                              child: const Icon(Icons.camera_alt,
-                                  color: Colors.white, size: 20),
+                              child: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
                             ),
                           ),
                         ),
@@ -539,11 +465,14 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                   const SizedBox(height: 32),
 
                   // Nome
-                  const Text('Nome Completo',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: Color(0xFF374151))),
+                  const Text(
+                    'Nome Completo',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Color(0xFF374151),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _nameController,
@@ -551,8 +480,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                     decoration: InputDecoration(
                       hintText: 'Digite seu nome',
                       prefixIcon: const Icon(Icons.person_outline),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       filled: true,
                       fillColor: const Color(0xFFF9FAFB),
                     ),
@@ -561,11 +489,14 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                   const SizedBox(height: 20),
 
                   // Idade
-                  const Text('Idade',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                          color: Color(0xFF374151))),
+                  const Text(
+                    'Idade',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: Color(0xFF374151),
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   AgeTextField(controller: _ageController),
 
@@ -582,8 +513,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                           selectedState = value;
                           selectedCity = null;
                         });
-                        Future.delayed(const Duration(milliseconds: 100),
-                            _removeFocusCompletely);
+                        Future.delayed(const Duration(milliseconds: 100), _removeFocusCompletely);
                       },
                     ),
                   ),
@@ -599,8 +529,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                       onChanged: (value) {
                         _removeFocusCompletely();
                         setState(() => selectedCity = value);
-                        Future.delayed(const Duration(milliseconds: 100),
-                            _removeFocusCompletely);
+                        Future.delayed(const Duration(milliseconds: 100), _removeFocusCompletely);
                       },
                     ),
                   ),
@@ -615,25 +544,23 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF3B82F6),
                         padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         elevation: 0,
-                        disabledBackgroundColor:
-                            const Color(0xFF3B82F6).withOpacity(0.6),
+                        disabledBackgroundColor: const Color(0xFF3B82F6).withOpacity(0.6),
                       ),
                       child: _isSaving
                           ? const SizedBox(
                               height: 20,
                               width: 20,
-                              child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2),
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
                           : const Text(
                               'Salvar Alterações',
                               style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white),
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
                     ),
                   ),

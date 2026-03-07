@@ -1,4 +1,4 @@
-package com.vstecnology.dartobranew
+package com.maodeobraoficial.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -1,18 +1,35 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
-    namespace = "com.vstecnology.dartobranew"
+    namespace = "com.maodeobraoficial.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String
+            keyPassword = keystoreProperties["keyPassword"] as String
+            storeFile = file(keystoreProperties["storeFile"] as String)
+            storePassword = keystoreProperties["storePassword"] as String
+        }
+    }
+
     compileOptions {
-        // Flag para habilitar o core library desugaring
         isCoreLibraryDesugaringEnabled = true
-        
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -22,19 +39,17 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.vstecnology.dartobranew"
-        minSdk = flutter.minSdkVersion  // Necessário para desugaring (mínimo 21)
+        applicationId = "com.maodeobraoficial.app"
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        
-        // Necessário para o desugaring
         multiDexEnabled = true
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
@@ -44,6 +59,5 @@ flutter {
 }
 
 dependencies {
-    // Core library desugaring - OBRIGATÓRIO para flutter_local_notifications 20.0.0+
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

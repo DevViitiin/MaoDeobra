@@ -1,16 +1,14 @@
-// ✅ ARQUIVO OTIMIZADO - create_vacancys.dart COM FIREBASE STORAGE
 // ignore_for_file: unused_field
 
 import 'package:dartobra_new/services/services_storage/service_storage.dart';
 import 'package:dartobra_new/services/services_vacancy/vacancy_service.dart';
+import 'package:dartobra_new/widgets/permissions/permissions_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:image_picker/image_picker.dart';
 import 'components.dart';
 import 'dart:io';
-
-
 
 class CreateVacancys extends StatefulWidget {
   final bool isEditing;
@@ -33,7 +31,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final VacancyService _vacancyService = VacancyService();
   final ImagePicker _picker = ImagePicker();
-  final FirebaseStorageService _storageService = FirebaseStorageService(); // ✅ NOVO
+  final FirebaseStorageService _storageService = FirebaseStorageService();
 
   // Controllers
   final TextEditingController _titleController = TextEditingController();
@@ -59,8 +57,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
 
   // Loading states
   bool _isUploading = false;
-  String _uploadStatus = ''; // ✅ NOVO - Para mostrar status detalhado
-  double _uploadProgress = 0.0; // ✅ NOVO - Progress bar
+  String _uploadStatus = '';
+  double _uploadProgress = 0.0;
 
   // Lista de tipos de salário
   final List<String> salaryTypes = [
@@ -83,13 +81,11 @@ class _CreateVacancysState extends State<CreateVacancys> {
     super.dispose();
   }
 
-  // ✅ NOVO MÉTODO - Upload usando Firebase Storage com compressão
   Future<List<String>> _uploadAllMedia() async {
     List<String> uploadedUrls = [];
     int totalFiles = _selectedImages.length + _selectedVideos.length;
     int currentFile = 0;
 
-    // Upload das imagens
     for (var image in _selectedImages) {
       currentFile++;
       setState(() {
@@ -116,7 +112,6 @@ class _CreateVacancysState extends State<CreateVacancys> {
       }
     }
 
-    // Upload dos vídeos
     for (var video in _selectedVideos) {
       currentFile++;
       setState(() {
@@ -146,12 +141,41 @@ class _CreateVacancysState extends State<CreateVacancys> {
   }
 
   Future<void> _pickImages() async {
-    try {
-      if (_selectedImages.length >= 3) {
-        _showSnackBar('Você já adicionou o máximo de 3 fotos', Colors.orange);
-        return;
-      }
+    if (_selectedImages.length >= 3) {
+      _showSnackBar('Você já adicionou o máximo de 3 fotos', Colors.orange);
+      return;
+    }
 
+    // 1️⃣ Checa/solicita permissão de galeria
+    var result = await PermissionUtil.checkAndRequest(isCamera: false);
+
+    // 2️⃣ Negada (não permanente) → oferece tentar de novo UMA vez
+    if (result == PermissionResult.denied) {
+      final wantsToRetry = await PermissionUtil.showPermissionDialog(
+        context: context,
+        result: result,
+        permissionLabel: 'galeria',
+        usageReason: 'para adicionar fotos à vaga',
+      );
+
+      if (!wantsToRetry) return;
+
+      result = await PermissionUtil.checkAndRequest(isCamera: false);
+    }
+
+    // 3️⃣ Ainda sem permissão → diálogo correto
+    if (result != PermissionResult.granted) {
+      await PermissionUtil.showPermissionDialog(
+        context: context,
+        result: result,
+        permissionLabel: 'galeria',
+        usageReason: 'para adicionar fotos à vaga',
+      );
+      return;
+    }
+
+    // 4️⃣ Permissão concedida → abre picker
+    try {
       final List<XFile> images = await _picker.pickMultiImage();
       if (images.isNotEmpty) {
         int remainingSlots = 3 - _selectedImages.length;
@@ -166,24 +190,53 @@ class _CreateVacancysState extends State<CreateVacancys> {
 
         if (images.length > remainingSlots) {
           _showSnackBar(
-            'Apenas ${imagesToAdd.length} foto(s) foi(ram) adicionada(s). Limite máximo: 3 fotos',
+            'Apenas ${imagesToAdd.length} foto(s) adicionada(s). Limite: 3 fotos',
             Colors.orange,
           );
         }
       }
     } catch (e) {
-      print('Erro ao selecionar imagens: $e');
+      debugPrint('Erro ao selecionar imagens: $e');
       _showSnackBar('Erro ao selecionar imagens', Colors.red);
     }
   }
 
   Future<void> _pickVideo() async {
-    try {
-      if (_selectedVideos.length >= 1) {
-        _showSnackBar('Você já adicionou o máximo de 1 vídeo', Colors.orange);
-        return;
-      }
+    if (_selectedVideos.length >= 1) {
+      _showSnackBar('Você já adicionou o máximo de 1 vídeo', Colors.orange);
+      return;
+    }
 
+    // 1️⃣ Checa/solicita permissão de galeria
+    var result = await PermissionUtil.checkAndRequest(isCamera: false);
+
+    // 2️⃣ Negada (não permanente) → oferece tentar de novo UMA vez
+    if (result == PermissionResult.denied) {
+      final wantsToRetry = await PermissionUtil.showPermissionDialog(
+        context: context,
+        result: result,
+        permissionLabel: 'galeria',
+        usageReason: 'para adicionar vídeos à vaga',
+      );
+
+      if (!wantsToRetry) return;
+
+      result = await PermissionUtil.checkAndRequest(isCamera: false);
+    }
+
+    // 3️⃣ Ainda sem permissão
+    if (result != PermissionResult.granted) {
+      await PermissionUtil.showPermissionDialog(
+        context: context,
+        result: result,
+        permissionLabel: 'galeria',
+        usageReason: 'para adicionar vídeos à vaga',
+      );
+      return;
+    }
+
+    // 4️⃣ Permissão concedida → abre picker
+    try {
       final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
       if (video != null) {
         setState(() {
@@ -191,7 +244,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
         });
       }
     } catch (e) {
-      print('Erro ao selecionar vídeo: $e');
+      debugPrint('Erro ao selecionar vídeo: $e');
       _showSnackBar('Erro ao selecionar vídeo', Colors.red);
     }
   }
@@ -233,7 +286,6 @@ class _CreateVacancysState extends State<CreateVacancys> {
     return true;
   }
 
-  // ✅ MÉTODO OTIMIZADO - Salvar vaga com Firebase Storage
   Future<void> _saveVacancy() async {
     if (!_validateFields()) return;
 
@@ -244,28 +296,26 @@ class _CreateVacancysState extends State<CreateVacancys> {
     });
 
     try {
-      // Upload de mídias
       List<String> mediaUrls = await _uploadAllMedia();
 
-      // Separar URLs por tipo
       List<String> imageUrls = [];
       List<String> videoUrls = [];
 
       for (String url in mediaUrls) {
-        // Firebase Storage URLs contêm o tipo no path
         if (url.contains('/vacancies/')) {
-          // Detectar se é imagem ou vídeo pela extensão
-          if (url.contains('.jpg') || url.contains('.jpeg') || 
-              url.contains('.png') || url.contains('.webp')) {
+          if (url.contains('.jpg') ||
+              url.contains('.jpeg') ||
+              url.contains('.png') ||
+              url.contains('.webp')) {
             imageUrls.add(url);
-          } else if (url.contains('.mp4') || url.contains('.mov') || 
-                     url.contains('.avi')) {
+          } else if (url.contains('.mp4') ||
+              url.contains('.mov') ||
+              url.contains('.avi')) {
             videoUrls.add(url);
           }
         }
       }
 
-      // Processar salário
       String finalSalary = 'A combinar';
       if (selectedSalaryType != null) {
         if (selectedSalaryType == 'A combinar') {
@@ -281,7 +331,6 @@ class _CreateVacancysState extends State<CreateVacancys> {
         _uploadStatus = 'Salvando vaga...';
       });
 
-      // Criar objeto da vaga
       Map<String, dynamic> vacancyData = {
         'title': _titleController.text.trim().isEmpty
             ? null
@@ -307,13 +356,12 @@ class _CreateVacancysState extends State<CreateVacancys> {
           'request_views': {},
         },
         'stats': {
-          'total_views': 0, 
+          'total_views': 0,
           'unique_viewers': [],
           'created_timestamp': DateTime.now().millisecondsSinceEpoch,
         },
       };
 
-      // Salvar no Firebase Database
       final vacancyId = await _vacancyService.createVacancy(vacancyData);
 
       setState(() {
@@ -323,7 +371,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
       if (vacancyId != null) {
         _showSnackBar('Vaga criada com sucesso!', Colors.green);
         await Future.delayed(Duration(seconds: 1));
-        
+
         if (mounted) {
           Navigator.pop(context, true);
         }
@@ -331,7 +379,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
         _showSnackBar('Erro ao criar vaga', Colors.red);
       }
     } catch (e) {
-      print('Erro ao salvar vaga: $e');
+      debugPrint('Erro ao salvar vaga: $e');
       setState(() {
         _isUploading = false;
       });
@@ -364,7 +412,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
       ),
     );
   }
-  
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -391,11 +439,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionTitle(
-                    'Informações Básicas',
-                    Icons.assignment,
-                    true,
-                  ),
+                  _buildSectionTitle('Informações Básicas', Icons.assignment, true),
                   SizedBox(height: 16),
 
                   ProfessionDropdown(
@@ -452,20 +496,14 @@ class _CreateVacancysState extends State<CreateVacancys> {
                   _buildSalaryTypeDropdown(),
                   SizedBox(height: 16),
 
-                  if (selectedSalaryType != null &&
-                      selectedSalaryType != 'A combinar')
+                  if (selectedSalaryType != null && selectedSalaryType != 'A combinar')
                     _buildSalaryField(),
-                  if (selectedSalaryType != null &&
-                      selectedSalaryType != 'A combinar')
+                  if (selectedSalaryType != null && selectedSalaryType != 'A combinar')
                     SizedBox(height: 16),
 
                   SizedBox(height: 16),
 
-                  _buildSectionTitle(
-                    'Mídia (Opcional)',
-                    Icons.photo_library,
-                    false,
-                  ),
+                  _buildSectionTitle('Mídia (Opcional)', Icons.photo_library, false),
                   SizedBox(height: 16),
                   _buildMediaUploadSection(),
                   SizedBox(height: 16),
@@ -506,13 +544,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
                       child: Text(
                         _isUploading
                             ? 'Salvando...'
-                            : (widget.isEditing
-                                  ? 'Salvar Alterações'
-                                  : 'Criar Vaga'),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+                            : (widget.isEditing ? 'Salvar Alterações' : 'Criar Vaga'),
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
@@ -521,7 +554,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
               ),
             ),
 
-            // ✅ NOVO: Overlay melhorado com progresso detalhado
+            // Overlay de progresso
             if (_isUploading)
               Container(
                 color: Colors.black54,
@@ -535,9 +568,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
                         children: [
                           CircularProgressIndicator(
                             value: _uploadProgress > 0 ? _uploadProgress : null,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Color(0xFFFF6B35),
-                            ),
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B35)),
                             strokeWidth: 3,
                           ),
                           SizedBox(height: 16),
@@ -550,10 +581,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
                             SizedBox(height: 8),
                             Text(
                               '${(_uploadProgress * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
+                              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                             ),
                           ],
                         ],
@@ -620,7 +648,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
     );
   }
 
-  void _showSalaryTypeDialog() async{
+  void _showSalaryTypeDialog() async {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       FocusScope.of(context).unfocus();
     });
@@ -630,9 +658,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
       barrierDismissible: true,
       builder: (BuildContext dialogContext) {
         return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: Container(
             constraints: BoxConstraints(maxHeight: 500),
             child: Column(
@@ -681,28 +707,20 @@ class _CreateVacancysState extends State<CreateVacancys> {
                           Navigator.pop(dialogContext);
                         },
                         child: Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 16,
-                          ),
+                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? Color(0xFF3B82F6).withOpacity(0.1)
                                 : Colors.transparent,
                             border: Border(
-                              bottom: BorderSide(
-                                color: Colors.grey[200]!,
-                                width: 1,
-                              ),
+                              bottom: BorderSide(color: Colors.grey[200]!, width: 1),
                             ),
                           ),
                           child: Row(
                             children: [
                               Icon(
                                 Icons.attach_money,
-                                color: isSelected
-                                    ? Color(0xFF3B82F6)
-                                    : Colors.grey[600],
+                                color: isSelected ? Color(0xFF3B82F6) : Colors.grey[600],
                                 size: 22,
                               ),
                               SizedBox(width: 16),
@@ -711,9 +729,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
                                   type,
                                   style: TextStyle(
                                     fontSize: 16,
-                                    color: isSelected
-                                        ? Color(0xFF3B82F6)
-                                        : Colors.black87,
+                                    color: isSelected ? Color(0xFF3B82F6) : Colors.black87,
                                     fontWeight: isSelected
                                         ? FontWeight.w600
                                         : FontWeight.normal,
@@ -721,11 +737,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
                                 ),
                               ),
                               if (isSelected)
-                                Icon(
-                                  Icons.check_circle,
-                                  color: Color(0xFF3B82F6),
-                                  size: 22,
-                                ),
+                                Icon(Icons.check_circle, color: Color(0xFF3B82F6), size: 22),
                             ],
                           ),
                         ),
@@ -739,6 +751,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
         );
       },
     );
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       FocusScope.of(context).unfocus();
     });
@@ -774,11 +787,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
             decoration: InputDecoration(
               hintText: 'R\$ 0,00',
               hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: Icon(
-                Icons.attach_money,
-                color: Color(0xFFFF6B35),
-                size: 20,
-              ),
+              prefixIcon: Icon(Icons.attach_money, color: Color(0xFFFF6B35), size: 20),
               border: InputBorder.none,
               contentPadding: EdgeInsets.all(16),
             ),
@@ -787,7 +796,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
       ],
     );
   }
-  
+
   Widget _buildSectionTitle(String title, IconData icon, bool isRequired) {
     return Row(
       children: [
@@ -873,7 +882,6 @@ class _CreateVacancysState extends State<CreateVacancys> {
             enabled: canAddMoreImages,
           ),
           SizedBox(height: 12),
-
           Container(
             padding: EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -923,11 +931,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  icon,
-                  color: enabled ? Color(0xFFFF6B35) : Colors.grey[400],
-                  size: 22,
-                ),
+                Icon(icon, color: enabled ? Color(0xFFFF6B35) : Colors.grey[400], size: 22),
                 SizedBox(width: 10),
                 Flexible(
                   child: Text(
@@ -958,19 +962,11 @@ class _CreateVacancysState extends State<CreateVacancys> {
       children: [
         Row(
           children: [
-            Icon(
-              isVideo ? Icons.videocam : Icons.photo,
-              color: Color(0xFFFF6B35),
-              size: 18,
-            ),
+            Icon(isVideo ? Icons.videocam : Icons.photo, color: Color(0xFFFF6B35), size: 18),
             SizedBox(width: 8),
             Text(
               title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             SizedBox(width: 8),
             Container(
@@ -981,11 +977,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
               ),
               child: Text(
                 '${items.length}',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -1026,18 +1018,10 @@ class _CreateVacancysState extends State<CreateVacancys> {
                                     Container(
                                       color: Colors.black,
                                       child: Center(
-                                        child: Icon(
-                                          Icons.videocam,
-                                          size: 40,
-                                          color: Colors.white70,
-                                        ),
+                                        child: Icon(Icons.videocam, size: 40, color: Colors.white70),
                                       ),
                                     ),
-                                    Icon(
-                                      Icons.play_circle_fill,
-                                      size: 50,
-                                      color: Colors.white,
-                                    ),
+                                    Icon(Icons.play_circle_fill, size: 50, color: Colors.white),
                                   ],
                                 )
                               : Image.file(items[index], fit: BoxFit.cover),
@@ -1053,15 +1037,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
                         },
                         child: Container(
                           padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.close,
-                            color: Colors.white,
-                            size: 16,
-                          ),
+                          decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                          child: Icon(Icons.close, color: Colors.white, size: 16),
                         ),
                       ),
                     ),
