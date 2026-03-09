@@ -1,21 +1,24 @@
-// lib/screens/app_home/search_vacancy/my_vacancy_detail.dart
-// ✅ Design premium — glassmorphism, gradientes ricos, animações de entrada
-
-// ignore_for_file: unused_field
+// lib/screens/app_home/search_vacancy/my_vacancy_details_page.dart
 
 import 'package:dartobra_new/models/search_model/vacancy_model.dart';
+import 'package:dartobra_new/services/services_vacancy/vacancy_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:ui';
 
 class MyVacancyDetailPage extends StatefulWidget {
   final VacancyModel vacancy;
+  final String localId;
   final VoidCallback onEditVacancy;
+  final VoidCallback? onVacancyDeleted;
 
   const MyVacancyDetailPage({
     Key? key,
     required this.vacancy,
+    required this.localId,
     required this.onEditVacancy,
+    this.onVacancyDeleted,
   }) : super(key: key);
 
   @override
@@ -31,55 +34,202 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
   late Animation<Offset> _contentSlide;
   late Animation<double> _contentOpacity;
 
-  // Paleta
-  static const Color _emerald = Color(0xFF059669);
+  final VacancyService _vacancyService = VacancyService();
+
+  late String _currentStatus;
+  bool _isTogglingStatus = false;
+  bool _isDeletingVacancy = false;
+
+  // Índice da imagem atual na galeria
+  int _currentImageIndex = 0;
+  late PageController _imagePageController;
+
+  static const Color _emerald        = Color(0xFF059669);
   static const Color _emeraldSurface = Color(0xFFD1FAE5);
-  static const Color _surface = Color(0xFFFAFAFA);
-  static const Color _ink = Color(0xFF111827);
-  static const Color _muted = Color(0xFF6B7280);
-  static const Color _border = Color(0xFFE5E7EB);
+  static const Color _surface        = Color(0xFFFAFAFA);
+  static const Color _ink            = Color(0xFF111827);
+  static const Color _muted          = Color(0xFF6B7280);
+  static const Color _border         = Color(0xFFE5E7EB);
+  static const Color _amber          = Color(0xFFF59E0B);
+  static const Color _amberSurface   = Color(0xFFFEF3C7);
+  static const Color _red            = Color(0xFFDC2626);
+  static const Color _redSurface     = Color(0xFFFEE2E2);
+
+  bool get _isOpen => _currentStatus.toLowerCase() == 'aberta';
+
+  List<String> get _validImages =>
+      widget.vacancy.images.where((img) => img.isNotEmpty).toList();
 
   @override
   void initState() {
     super.initState();
+    _currentStatus = widget.vacancy.status;
+    _imagePageController = PageController();
 
-    _heroCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _contentCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
+    _heroCtrl    = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _contentCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
 
-    _heroScale = Tween<double>(begin: 1.08, end: 1.0).animate(
-      CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOutCubic),
-    );
-    _heroOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _heroCtrl, curve: const Interval(0.0, 0.6)),
-    );
-    _contentSlide = Tween<Offset>(
-      begin: const Offset(0, 0.06),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOutCubic),
-    );
-    _contentOpacity = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut),
-    );
+    _heroScale = Tween<double>(begin: 1.08, end: 1.0)
+        .animate(CurvedAnimation(parent: _heroCtrl, curve: Curves.easeOutCubic));
+    _heroOpacity = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _heroCtrl, curve: const Interval(0.0, 0.6)));
+    _contentSlide = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOutCubic));
+    _contentOpacity = Tween<double>(begin: 0.0, end: 1.0)
+        .animate(CurvedAnimation(parent: _contentCtrl, curve: Curves.easeOut));
 
     _heroCtrl.forward();
-    Future.delayed(const Duration(milliseconds: 200), () {
-      if (mounted) _contentCtrl.forward();
-    });
+    Future.delayed(const Duration(milliseconds: 200),
+        () { if (mounted) _contentCtrl.forward(); });
   }
 
   @override
   void dispose() {
     _heroCtrl.dispose();
     _contentCtrl.dispose();
+    _imagePageController.dispose();
     super.dispose();
   }
+
+  // ── TOGGLE STATUS ───────────────────────────────────────────
+
+  Future<void> _toggleStatus() async {
+    if (_isOpen) {
+      final confirmed = await _showConfirmDialog(
+        icon: Icons.pause_circle_outline_rounded,
+        iconColor: _amber,
+        bgColor: _amberSurface,
+        title: 'Pausar vaga?',
+        body: 'A vaga ficará invisível nas buscas. Candidaturas existentes são preservadas.',
+        confirmLabel: 'Pausar',
+        confirmColor: _amber,
+      );
+      if (!confirmed) return;
+    }
+
+    setState(() => _isTogglingStatus = true);
+
+    final newStatus = await _vacancyService.toggleVacancyStatus(
+        widget.vacancy.id, _currentStatus);
+
+    if (mounted) {
+      setState(() {
+        _isTogglingStatus = false;
+        if (newStatus != null) _currentStatus = newStatus;
+      });
+
+      final opened = newStatus?.toLowerCase() == 'aberta';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(newStatus != null
+            ? (opened
+                ? 'Vaga reaberta! Aparece nas buscas novamente.'
+                : 'Vaga pausada. Invisível nas buscas.')
+            : 'Erro ao alterar status. Tente novamente.'),
+        backgroundColor: newStatus != null ? (opened ? _emerald : _amber) : _red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+      ));
+    }
+  }
+
+  // ── EXCLUIR VAGA ─────────────────────────────────────────────
+
+  Future<void> _deleteVacancy() async {
+    final confirmed = await _showConfirmDialog(
+      icon: Icons.delete_outline_rounded,
+      iconColor: _red,
+      bgColor: _redSurface,
+      title: 'Excluir vaga?',
+      body: 'Esta ação é permanente. A vaga será removida e as notificações de candidatura serão atualizadas.',
+      confirmLabel: 'Excluir',
+      confirmColor: _red,
+    );
+    if (!confirmed) return;
+
+    setState(() => _isDeletingVacancy = true);
+
+    final success = await _vacancyService.deleteVacancy(
+        widget.vacancy.id, widget.localId);
+
+    if (mounted) {
+      setState(() => _isDeletingVacancy = false);
+
+      if (success) {
+        widget.onVacancyDeleted?.call();
+        Navigator.pop(context, 'deleted');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Vaga excluída com sucesso.'),
+          backgroundColor: _emerald,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Erro ao excluir. Tente novamente.'),
+          backgroundColor: _red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    }
+  }
+
+  Future<bool> _showConfirmDialog({
+    required IconData icon,
+    required Color iconColor,
+    required Color bgColor,
+    required String title,
+    required String body,
+    required String confirmLabel,
+    required Color confirmColor,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: Row(
+              children: [
+                Container(
+                  width: 38, height: 38,
+                  decoration: BoxDecoration(
+                      color: bgColor, borderRadius: BorderRadius.circular(12)),
+                  child: Icon(icon, color: iconColor, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 17, fontWeight: FontWeight.w700)),
+              ],
+            ),
+            content: Text(body,
+                style: const TextStyle(fontSize: 14, height: 1.55)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancelar',
+                    style: TextStyle(
+                        color: _muted, fontWeight: FontWeight.w600)),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: confirmColor,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: Text(confirmLabel,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  // ── BUILD ────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -106,47 +256,63 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
               ],
             ),
             _buildFloatingAppBar(context),
+            if (_isDeletingVacancy)
+              Container(
+                color: Colors.black.withOpacity(0.45),
+                child: const Center(
+                  child: Card(
+                    shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.all(Radius.circular(16))),
+                    child: Padding(
+                      padding: EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(
+                              color: Color(0xFFDC2626), strokeWidth: 2.5),
+                          SizedBox(height: 16),
+                          Text('Excluindo vaga...',
+                              style:
+                                  TextStyle(fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
-        bottomNavigationBar: _buildBottomBar(context),
+        bottomNavigationBar: _buildBottomBar(),
       ),
     );
   }
 
   Widget _buildFloatingAppBar(BuildContext context) {
     return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 0, sigmaY: 0),
-          child: Container(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 8,
-              left: 8,
-              right: 16,
-              bottom: 8,
-            ),
-            color: Colors.transparent,
-            child: Row(
-              children: [
-                Material(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                  child: InkWell(
-                    onTap: () => Navigator.pop(context),
-                    borderRadius: BorderRadius.circular(12),
-                    child: const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: Icon(Icons.arrow_back_ios_new_rounded,
-                          color: Colors.white, size: 18),
-                    ),
-                  ),
+      top: 0, left: 0, right: 0,
+      child: Container(
+        padding: EdgeInsets.only(
+          top: MediaQuery.of(context).padding.top + 8,
+          left: 8, right: 16, bottom: 8,
+        ),
+        color: Colors.transparent,
+        child: Row(
+          children: [
+            Material(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                borderRadius: BorderRadius.circular(12),
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(Icons.arrow_back_ios_new_rounded,
+                      color: Colors.white, size: 18),
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -165,27 +331,32 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
           scale: _heroScale,
           child: FadeTransition(
             opacity: _heroOpacity,
-            child: Container(
-              decoration: const BoxDecoration(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
-                  colors: [
-                    Color(0xFF065F46),
-                    Color(0xFF059669),
-                    Color(0xFF34D399),
-                  ],
-                  stops: [0.0, 0.55, 1.0],
+                  colors: _isOpen
+                      ? const [
+                          Color(0xFF065F46),
+                          Color(0xFF059669),
+                          Color(0xFF34D399)
+                        ]
+                      : const [
+                          Color(0xFF78350F),
+                          Color(0xFFB45309),
+                          Color(0xFFFCD34D)
+                        ],
+                  stops: const [0.0, 0.55, 1.0],
                 ),
               ),
               child: Stack(
                 children: [
                   Positioned(
-                    top: -60,
-                    right: -40,
+                    top: -60, right: -40,
                     child: Container(
-                      width: 200,
-                      height: 200,
+                      width: 200, height: 200,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white.withOpacity(0.06),
@@ -193,11 +364,9 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                     ),
                   ),
                   Positioned(
-                    bottom: -30,
-                    left: -50,
+                    bottom: -30, left: -50,
                     child: Container(
-                      width: 180,
-                      height: 180,
+                      width: 180, height: 180,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: Colors.white.withOpacity(0.05),
@@ -212,23 +381,21 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                         ClipRRect(
                           borderRadius: BorderRadius.circular(28),
                           child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                            filter:
+                                ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                             child: Container(
-                              width: 90,
-                              height: 90,
+                              width: 90, height: 90,
                               decoration: BoxDecoration(
                                 color: Colors.white.withOpacity(0.18),
                                 borderRadius: BorderRadius.circular(28),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.3),
-                                  width: 1.5,
-                                ),
+                                    color: Colors.white.withOpacity(0.3),
+                                    width: 1.5),
                               ),
                               child: const Icon(
-                                Icons.work_outline_rounded,
-                                color: Colors.white,
-                                size: 44,
-                              ),
+                                  Icons.work_outline_rounded,
+                                  color: Colors.white,
+                                  size: 44),
                             ),
                           ),
                         ),
@@ -236,7 +403,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                         ClipRRect(
                           borderRadius: BorderRadius.circular(30),
                           child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+                            filter:
+                                ImageFilter.blur(sigmaX: 8, sigmaY: 8),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 8),
@@ -244,25 +412,28 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                                 color: Colors.white.withOpacity(0.15),
                                 borderRadius: BorderRadius.circular(30),
                                 border: Border.all(
-                                  color: Colors.white.withOpacity(0.25),
-                                  width: 1,
-                                ),
+                                    color:
+                                        Colors.white.withOpacity(0.25),
+                                    width: 1),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Container(
-                                    width: 7,
-                                    height: 7,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF6EE7B7),
+                                    width: 7, height: 7,
+                                    decoration: BoxDecoration(
+                                      color: _isOpen
+                                          ? const Color(0xFF6EE7B7)
+                                          : const Color(0xFFFCD34D),
                                       shape: BoxShape.circle,
                                     ),
                                   ),
                                   const SizedBox(width: 8),
-                                  const Text(
-                                    'Minha Vaga Publicada',
-                                    style: TextStyle(
+                                  Text(
+                                    _isOpen
+                                        ? 'Minha Vaga · Aberta'
+                                        : 'Minha Vaga · Pausada',
+                                    style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
@@ -276,7 +447,8 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                         ),
                         const SizedBox(height: 16),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 32),
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 32),
                           child: Text(
                             widget.vacancy.title,
                             textAlign: TextAlign.center,
@@ -293,9 +465,7 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                     ),
                   ),
                   Positioned(
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
+                    bottom: 0, left: 0, right: 0,
                     child: Container(
                       height: 48,
                       decoration: BoxDecoration(
@@ -304,7 +474,7 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                           end: Alignment.bottomCenter,
                           colors: [
                             Colors.transparent,
-                            _surface.withOpacity(0.9),
+                            _surface.withOpacity(0.9)
                           ],
                         ),
                       ),
@@ -325,10 +495,13 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const SizedBox(height: 24),
+
           Center(
             child: Container(
               margin: const EdgeInsets.only(bottom: 28),
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 18, vertical: 9),
               decoration: BoxDecoration(
                 color: _emeraldSurface,
                 borderRadius: BorderRadius.circular(30),
@@ -336,14 +509,19 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
               child: Text(
                 widget.vacancy.profession,
                 style: TextStyle(
-                  fontSize: 13,
-                  color: _emerald,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.4,
-                ),
+                    fontSize: 13,
+                    color: _emerald,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.4),
               ),
             ),
           ),
+
+          // ── GALERIA DE IMAGENS (1–3 fotos, carrossel com indicador) ──
+          if (_validImages.isNotEmpty) ...[
+            _buildImageGallery(),
+            const SizedBox(height: 28),
+          ],
 
           _sectionLabel('DETALHES'),
           const SizedBox(height: 12),
@@ -362,14 +540,263 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
           _buildDescriptionCard(),
           const SizedBox(height: 28),
 
-          if (widget.vacancy.images.isNotEmpty) ...[
-            _sectionLabel('GALERIA'),
-            const SizedBox(height: 12),
-            _buildImageGallery(context),
-            const SizedBox(height: 28),
-          ],
-
           _buildInfoBox(),
+          const SizedBox(height: 16),
+
+          // Botão excluir
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed:
+                  _isDeletingVacancy ? null : _deleteVacancy,
+              icon: const Icon(Icons.delete_outline_rounded,
+                  size: 18),
+              label: const Text('Excluir Vaga',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _red,
+                side: const BorderSide(color: _red, width: 1.5),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── GALERIA NOVA: carrossel PageView com dots ─────────────────
+  Widget _buildImageGallery() {
+    final images = _validImages;
+    final count = images.length;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel('GALERIA'),
+        const SizedBox(height: 12),
+
+        // Carrossel
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: SizedBox(
+            height: 220,
+            child: count == 1
+                // ── 1 imagem: ocupa tudo
+                ? _galleryImage(images[0], fit: BoxFit.cover)
+                // ── 2 ou 3 imagens: PageView deslizável
+                : Stack(
+                    children: [
+                      PageView.builder(
+                        controller: _imagePageController,
+                        itemCount: count,
+                        onPageChanged: (i) =>
+                            setState(() => _currentImageIndex = i),
+                        itemBuilder: (_, i) =>
+                            _galleryImage(images[i], fit: BoxFit.cover),
+                      ),
+                      // Setas de navegação (aparecem apenas se count > 1)
+                      Positioned.fill(
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            if (_currentImageIndex > 0)
+                              _navArrow(
+                                icon: Icons.chevron_left_rounded,
+                                onTap: () => _imagePageController.previousPage(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                ),
+                              )
+                            else
+                              const SizedBox(width: 48),
+                            if (_currentImageIndex < count - 1)
+                              _navArrow(
+                                icon: Icons.chevron_right_rounded,
+                                onTap: () => _imagePageController.nextPage(
+                                  duration: const Duration(milliseconds: 300),
+                                  curve: Curves.easeInOut,
+                                ),
+                              )
+                            else
+                              const SizedBox(width: 48),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+
+        // Dots indicadores (apenas se > 1 imagem)
+        if (count > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(count, (i) {
+              final active = i == _currentImageIndex;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: active ? 20 : 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: active ? _emerald : _border,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _galleryImage(String url, {required BoxFit fit}) {
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: fit,
+      width: double.infinity,
+      placeholder: (context, url) => Container(
+        color: Colors.grey.shade100,
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFF059669),
+            strokeWidth: 2,
+          ),
+        ),
+      ),
+      errorWidget: (context, url, error) => Container(
+        color: Colors.grey.shade100,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.image_not_supported_outlined,
+                size: 40, color: Colors.grey.shade400),
+            const SizedBox(height: 8),
+            Text('Imagem indisponível',
+                style: TextStyle(
+                    fontSize: 12, color: Colors.grey.shade400)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _navArrow({required IconData icon, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.all(8),
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.35),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: Colors.white, size: 22),
+      ),
+    );
+  }
+
+  Widget _buildStatusBanner() {
+    final color   = _isOpen ? _emerald : _amber;
+    final bgColor = _isOpen ? _emeraldSurface : _amberSurface;
+    final icon    = _isOpen
+        ? Icons.check_circle_rounded
+        : Icons.pause_circle_rounded;
+    final title   = _isOpen ? 'Vaga aberta' : 'Vaga pausada';
+    final subtitle = _isOpen
+        ? 'Trabalhadores podem encontrar e se candidatar.'
+        : 'Invisível nas buscas. Reabra para receber candidaturas.';
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeInOut,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(16),
+        border:
+            Border.all(color: color.withOpacity(0.3), width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44, height: 44,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: color)),
+                const SizedBox(height: 3),
+                Text(subtitle,
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: color.withOpacity(0.8),
+                        height: 1.4)),
+              ],
+            ),
+          ),
+          // Toggle switch
+          GestureDetector(
+            onTap: _isTogglingStatus ? null : _toggleStatus,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: 52, height: 28,
+              decoration: BoxDecoration(
+                color: _isOpen ? _emerald : Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Stack(
+                children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    left: _isOpen ? 26 : 2,
+                    top: 2,
+                    child: _isTogglingStatus
+                        ? SizedBox(
+                            width: 24, height: 24,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: _isOpen
+                                    ? Colors.white
+                                    : _emerald),
+                          )
+                        : Container(
+                            width: 24, height: 24,
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                    color: Colors.black26,
+                                    blurRadius: 4,
+                                    offset: Offset(0, 1))
+                              ],
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -378,29 +805,49 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
   Widget _sectionLabel(String text) => Text(
         text,
         style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: _muted,
-          letterSpacing: 1.2,
-        ),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: _muted,
+            letterSpacing: 1.2),
       );
 
-  // ── Coluna única de detalhes ──
   Widget _buildDetailsGrid() {
     final items = <Map<String, dynamic>>[
       if (_hasValidCompany())
-        {'icon': Icons.business_rounded, 'label': 'Empresa', 'value': widget.vacancy.company, 'color': _emerald},
-      {'icon': Icons.location_on_rounded, 'label': 'Localização', 'value': '${widget.vacancy.city}, ${widget.vacancy.state}', 'color': const Color(0xFFEF4444)},
+        {
+          'icon': Icons.business_rounded,
+          'label': 'Empresa',
+          'value': widget.vacancy.company,
+          'color': _emerald
+        },
+      {
+        'icon': Icons.location_on_rounded,
+        'label': 'Localização',
+        'value': '${widget.vacancy.city}, ${widget.vacancy.state}',
+        'color': const Color(0xFFEF4444)
+      },
       if (widget.vacancy.salary.isNotEmpty)
-        {'icon': Icons.payments_rounded, 'label': 'Salário', 'value': '${widget.vacancy.salary} · ${widget.vacancy.salaryType}', 'color': const Color(0xFF8B5CF6)},
-      {'icon': Icons.radio_button_checked_rounded, 'label': 'Status', 'value': widget.vacancy.status, 'color': const Color(0xFFF59E0B)},
+        {
+          'icon': Icons.payments_rounded,
+          'label': 'Salário',
+          'value':
+              '${widget.vacancy.salary} · ${widget.vacancy.salaryType}',
+          'color': const Color(0xFF8B5CF6)
+        },
+      {
+        'icon': Icons.radio_button_checked_rounded,
+        'label': 'Status',
+        'value': _currentStatus,
+        'color': _isOpen ? _emerald : _amber
+      },
     ];
 
     return Column(
       children: [
         for (int i = 0; i < items.length; i++)
           Padding(
-            padding: EdgeInsets.only(bottom: i < items.length - 1 ? 10 : 0),
+            padding:
+                EdgeInsets.only(bottom: i < items.length - 1 ? 10 : 0),
             child: _detailTile(items[i]),
           ),
       ],
@@ -418,17 +865,15 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
         border: Border.all(color: _border, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2)),
         ],
       ),
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 36, height: 36,
             decoration: BoxDecoration(
               color: c.withOpacity(0.10),
               borderRadius: BorderRadius.circular(10),
@@ -438,27 +883,20 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
           const SizedBox(width: 12),
           Expanded(
             child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  item['label'] as String,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: _muted,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.3,
-                  ),
-                ),
+                Text(item['label'] as String,
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: _muted,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3)),
                 const SizedBox(height: 4),
-                Text(
-                  item['value'] as String,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF111827),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(item['value'] as String,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF111827),
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -472,21 +910,19 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
       children: [
         if (widget.vacancy.emailContact.isNotEmpty)
           _contactRow(
-            icon: Icons.mail_outline_rounded,
-            label: 'Email',
-            value: widget.vacancy.emailContact,
-            color: const Color(0xFF3B82F6),
-          ),
+              icon: Icons.mail_outline_rounded,
+              label: 'Email',
+              value: widget.vacancy.emailContact,
+              color: const Color(0xFF3B82F6)),
         if (widget.vacancy.emailContact.isNotEmpty &&
             widget.vacancy.phoneContact.isNotEmpty)
           const SizedBox(height: 10),
         if (widget.vacancy.phoneContact.isNotEmpty)
           _contactRow(
-            icon: Icons.phone_outlined,
-            label: 'Telefone',
-            value: widget.vacancy.phoneContact,
-            color: _emerald,
-          ),
+              icon: Icons.phone_outlined,
+              label: 'Telefone',
+              value: widget.vacancy.phoneContact,
+              color: _emerald),
       ],
     );
   }
@@ -498,24 +934,23 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     required Color color,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _border, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2)),
         ],
       ),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
+            width: 40, height: 40,
             decoration: BoxDecoration(
               color: color.withOpacity(0.09),
               borderRadius: BorderRadius.circular(12),
@@ -529,18 +964,16 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
               children: [
                 Text(label,
                     style: TextStyle(
-                      fontSize: 11,
-                      color: _muted,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.3,
-                    )),
+                        fontSize: 11,
+                        color: _muted,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3)),
                 const SizedBox(height: 2),
                 Text(value,
                     style: const TextStyle(
-                      fontSize: 15,
-                      color: Color(0xFF111827),
-                      fontWeight: FontWeight.w600,
-                    )),
+                        fontSize: 15,
+                        color: Color(0xFF111827),
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -560,14 +993,15 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
         border: Border.all(color: _border, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2)),
         ],
       ),
       child: Text(
-        hasDesc ? widget.vacancy.description : 'Sem descrição disponível.',
+        hasDesc
+            ? widget.vacancy.description
+            : 'Sem descrição disponível.',
         style: TextStyle(
           fontSize: 14,
           color: hasDesc ? _ink : _muted,
@@ -578,108 +1012,14 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     );
   }
 
-  Widget _buildImageGallery(BuildContext context) {
-    return SizedBox(
-      height: 190,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: widget.vacancy.images.length,
-        itemBuilder: (context, index) {
-          return GestureDetector(
-            onTap: () => _openFullscreen(context, widget.vacancy.images, index),
-            child: Container(
-              width: 260,
-              margin: EdgeInsets.only(
-                right: index < widget.vacancy.images.length - 1 ? 12 : 0,
-              ),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.10),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Hero(
-                      tag: 'my_vacancy_image_$index',
-                      child: Image.network(
-                        widget.vacancy.images[index],
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey.shade100,
-                          child: Icon(Icons.image_not_supported_outlined,
-                              size: 40, color: Colors.grey.shade400),
-                        ),
-                        loadingBuilder: (_, child, progress) {
-                          if (progress == null) return child;
-                          return Container(color: Colors.grey.shade100);
-                        },
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 10,
-                      right: 10,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.4),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                              color: Colors.white.withOpacity(0.2), width: 1),
-                        ),
-                        child: const Icon(Icons.open_in_full_rounded,
-                            color: Colors.white, size: 14),
-                      ),
-                    ),
-                    if (widget.vacancy.images.length > 1)
-                      Positioned(
-                        top: 10,
-                        left: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.4),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${index + 1}/${widget.vacancy.images.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildInfoBox() {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            const Color(0xFF1D4ED8).withOpacity(0.06),
-            const Color(0xFF3B82F6).withOpacity(0.04),
-          ],
-        ),
+        gradient: LinearGradient(colors: [
+          const Color(0xFF1D4ED8).withOpacity(0.06),
+          const Color(0xFF3B82F6).withOpacity(0.04),
+        ]),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
             color: const Color(0xFF3B82F6).withOpacity(0.15), width: 1),
@@ -687,8 +1027,7 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
       child: Row(
         children: [
           Container(
-            width: 36,
-            height: 36,
+            width: 36, height: 36,
             decoration: BoxDecoration(
               color: const Color(0xFF3B82F6).withOpacity(0.10),
               borderRadius: BorderRadius.circular(10),
@@ -697,15 +1036,14 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
                 color: Color(0xFF3B82F6), size: 18),
           ),
           const SizedBox(width: 12),
-          Expanded(
+          const Expanded(
             child: Text(
               'Esta é a vaga que trabalhadores visualizam quando buscam por oportunidades.',
               style: TextStyle(
-                fontSize: 13,
-                color: const Color(0xFF1E40AF),
-                height: 1.5,
-                fontWeight: FontWeight.w500,
-              ),
+                  fontSize: 13,
+                  color: Color(0xFF1E40AF),
+                  height: 1.5,
+                  fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -713,7 +1051,7 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
     );
   }
 
-  Widget _buildBottomBar(BuildContext context) {
+  Widget _buildBottomBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
       decoration: BoxDecoration(
@@ -721,159 +1059,47 @@ class _MyVacancyDetailPageState extends State<MyVacancyDetailPage>
         border: Border(top: BorderSide(color: _border, width: 1)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
-          ),
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, -4)),
         ],
       ),
       child: SafeArea(
-        child: SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: ElevatedButton.icon(
-            onPressed: widget.onEditVacancy,
-            icon: const Icon(Icons.edit_rounded, size: 18),
-            label: const Text(
-              'Editar Minha Vaga',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFF97316),
-              foregroundColor: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+        child: Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: widget.onEditVacancy,
+                  icon: const Icon(Icons.edit_rounded, size: 18),
+                  label: const Text('Editar Vaga',
+                      style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w700)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF97316),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
               ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 
-  bool _hasValidCompany() {
-    return widget.vacancy.company.isNotEmpty &&
-        widget.vacancy.company.toLowerCase() != 'não informado' &&
-        widget.vacancy.company.toLowerCase() != 'n/a' &&
-        widget.vacancy.company != '-';
-  }
+  bool _hasValidCompany() =>
+      widget.vacancy.company.isNotEmpty &&
+      widget.vacancy.company.toLowerCase() != 'não informado' &&
+      widget.vacancy.company.toLowerCase() != 'n/a' &&
+      widget.vacancy.company != '-';
 
   bool _hasContactInfo() =>
       widget.vacancy.emailContact.isNotEmpty ||
       widget.vacancy.phoneContact.isNotEmpty;
-
-  void _openFullscreen(BuildContext context, List<String> images, int index) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => FullscreenImageViewer(
-          images: images,
-          initialIndex: index,
-        ),
-      ),
-    );
-  }
-}
-
-// ══════════════════════════════════════════════════════
-// FULLSCREEN IMAGE VIEWER
-// ══════════════════════════════════════════════════════
-class FullscreenImageViewer extends StatefulWidget {
-  final List<String> images;
-  final int initialIndex;
-
-  const FullscreenImageViewer({
-    Key? key,
-    required this.images,
-    required this.initialIndex,
-  }) : super(key: key);
-
-  @override
-  State<FullscreenImageViewer> createState() => _FullscreenImageViewerState();
-}
-
-class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
-  late PageController _pageController;
-  late int _currentIndex;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(
-          '${_currentIndex + 1} / ${widget.images.length}',
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: PageView.builder(
-        controller: _pageController,
-        itemCount: widget.images.length,
-        onPageChanged: (index) => setState(() => _currentIndex = index),
-        itemBuilder: (context, index) {
-          return InteractiveViewer(
-            minScale: 0.5,
-            maxScale: 4.0,
-            child: Center(
-              child: Hero(
-                tag: 'my_vacancy_image_$index',
-                child: Image.network(
-                  widget.images[index],
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.broken_image_outlined,
-                          size: 72, color: Colors.grey.shade600),
-                      const SizedBox(height: 12),
-                      Text('Erro ao carregar imagem',
-                          style: TextStyle(
-                              color: Colors.grey.shade500, fontSize: 14)),
-                    ],
-                  ),
-                  loadingBuilder: (_, child, progress) {
-                    if (progress == null) return child;
-                    return Center(
-                      child: CircularProgressIndicator(
-                        value: progress.expectedTotalBytes != null
-                            ? progress.cumulativeBytesLoaded /
-                                progress.expectedTotalBytes!
-                            : null,
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
 }

@@ -3,11 +3,21 @@ import 'package:flutter/material.dart';
 
 class ProfessionalStatusControlWidget extends StatefulWidget {
   final bool initialIsActive;
-  final VoidCallback? onStatusChanged;
+
+  /// ID do usuário no nó Users — necessário para persistir no Firebase
+  final String localId;
+
+  /// ID do documento em professionals — evita re-query desnecessária
+  final String professionalId;
+
+  /// Chamado após mudança bem-sucedida, com o novo estado (true = ativo)
+  final void Function(bool isActive)? onStatusChanged;
 
   const ProfessionalStatusControlWidget({
     Key? key,
     required this.initialIsActive,
+    required this.localId,
+    required this.professionalId,
     this.onStatusChanged,
   }) : super(key: key);
 
@@ -27,25 +37,41 @@ class _ProfessionalStatusControlWidgetState
     _isActive = widget.initialIsActive;
   }
 
+  /// Sincroniza quando o pai reconstrói com um novo initialIsActive
+  /// (ex: após recarregar dados do banco)
+  @override
+  void didUpdateWidget(ProfessionalStatusControlWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialIsActive != widget.initialIsActive) {
+      setState(() => _isActive = widget.initialIsActive);
+    }
+  }
+
   Future<void> _toggleStatus() async {
-    // Confirmação antes de pausar
     if (_isActive) {
       final confirm = await _showPauseConfirmation();
       if (confirm != true) return;
     }
 
-    setState(() {
-      _isChanging = true;
-    });
+    setState(() => _isChanging = true);
 
     try {
+      // Captura o estado desejado antes de mudar qualquer coisa
+      final newStatus = !_isActive;
+
       final success = _isActive
-          ? await ProfessionalStatusService.pauseProfessionalProfile()
-          : await ProfessionalStatusService.activateProfessionalProfile();
+          ? await ProfessionalStatusService.pauseProfessionalProfile(
+              localId: widget.localId,
+              professionalId: widget.professionalId,
+            )
+          : await ProfessionalStatusService.activateProfessionalProfile(
+              localId: widget.localId,
+              professionalId: widget.professionalId,
+            );
 
       if (success) {
         setState(() {
-          _isActive = !_isActive;
+          _isActive = newStatus;
           _isChanging = false;
         });
 
@@ -57,7 +83,8 @@ class _ProfessionalStatusControlWidgetState
                     ? '✅ Perfil profissional ativado! Você aparecerá nas buscas.'
                     : '⏸️ Perfil profissional pausado. Você não aparecerá mais nas buscas.',
               ),
-              backgroundColor: _isActive ? Colors.green : Colors.orange.shade700,
+              backgroundColor:
+                  _isActive ? Colors.green : Colors.orange.shade700,
               behavior: SnackBarBehavior.floating,
               duration: const Duration(seconds: 3),
               shape: RoundedRectangleBorder(
@@ -66,13 +93,11 @@ class _ProfessionalStatusControlWidgetState
             ),
           );
 
-          // Notifica o parent widget
-          widget.onStatusChanged?.call();
+          // Propaga o novo estado para o pai com o bool correto
+          widget.onStatusChanged?.call(_isActive);
         }
       } else {
-        setState(() {
-          _isChanging = false;
-        });
+        setState(() => _isChanging = false);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -88,9 +113,7 @@ class _ProfessionalStatusControlWidgetState
         }
       }
     } catch (e) {
-      setState(() {
-        _isChanging = false;
-      });
+      setState(() => _isChanging = false);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -113,8 +136,8 @@ class _ProfessionalStatusControlWidgetState
         ),
         title: Row(
           children: [
-            Icon(Icons.pause_circle_outline, 
-                 color: Colors.orange.shade700, size: 28),
+            Icon(Icons.pause_circle_outline,
+                color: Colors.orange.shade700, size: 28),
             const SizedBox(width: 12),
             const Text(
               'Pausar Perfil?',
@@ -141,7 +164,8 @@ class _ProfessionalStatusControlWidgetState
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
             child: const Text(
               'Pausar',
@@ -172,7 +196,8 @@ class _ProfessionalStatusControlWidgetState
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: (_isActive ? Colors.green : Colors.orange).withOpacity(0.2),
+            color:
+                (_isActive ? Colors.green : Colors.orange).withOpacity(0.2),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -205,9 +230,7 @@ class _ProfessionalStatusControlWidgetState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _isActive
-                            ? 'Perfil Ativo'
-                            : 'Perfil Pausado',
+                        _isActive ? 'Perfil Ativo' : 'Perfil Pausado',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,

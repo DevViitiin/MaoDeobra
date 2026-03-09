@@ -1,4 +1,8 @@
-// ✅ ARQUIVO OTIMIZADO - edit_info_vacancy.dart COM FIREBASE STORAGE
+// ✅ ARQUIVO CORRIGIDO - edit_info_vacancy.dart COM FIREBASE STORAGE
+// CORREÇÕES:
+//   1. Upload de imagens e vídeos em listas SEPARADAS desde o início,
+//      eliminando a detecção por extensão na URL (que falha com Firebase Storage).
+//   2. Validação de descrição mínima de 80 caracteres.
 import 'package:dartobra_new/services/services_storage/service_storage.dart';
 import 'package:dartobra_new/services/services_vacancy/vacancy_service.dart';
 import 'package:flutter/material.dart';
@@ -16,8 +20,7 @@ class EditInfoVacancy extends StatefulWidget {
   final String emailContact;
   final String phoneContact;
   final String localId;
-  
-  // PARÂMETROS PARA EDIÇÃO
+
   final String? vacancyId;
   final String? existingTitle;
   final String? existingProfession;
@@ -52,44 +55,36 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   final ImagePicker _picker = ImagePicker();
   final VacancyService _vacancyService = VacancyService();
-  final FirebaseStorageService _storageService = FirebaseStorageService(); // ✅ NOVO
+  final FirebaseStorageService _storageService = FirebaseStorageService();
 
-  // Controllers
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _salaryController = TextEditingController();
 
-  // FocusNodes
   final FocusNode _titleFocus = FocusNode();
   final FocusNode _descriptionFocus = FocusNode();
   final FocusNode _salaryFocus = FocusNode();
 
-  // Profissão e Tipo de Salário
   String? selectedProfession;
   String? selectedSalaryType;
-
-  // Estado e Cidade
   String? selectedState;
   String? selectedCity;
 
-  // Mídia
   List<File> _selectedImages = [];
   List<File> _selectedVideos = [];
-  
-  // LISTAS PARA MÍDIAS EXISTENTES (URLs)
   List<String> _existingImageUrls = [];
   List<String> _existingVideoUrls = [];
-  
-  // ✅ NOVO: URLs que devem ser deletadas
   List<String> _urlsToDelete = [];
 
-  // Loading states
   bool _isUploading = false;
   bool _isLoadingData = false;
-  String _uploadStatus = ''; // ✅ NOVO
-  double _uploadProgress = 0.0; // ✅ NOVO
+  String _uploadStatus = '';
+  double _uploadProgress = 0.0;
 
-  // Lista de tipos de salário
+  // ── contador de caracteres para feedback visual ──────────────────────────
+  int get _descLen => _descriptionController.text.trim().length;
+  static const int _minDescLen = 80;
+
   final List<String> salaryTypes = [
     'Diário',
     'Semanal',
@@ -102,59 +97,40 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
   @override
   void initState() {
     super.initState();
-    if (widget.isEditing) {
-      _loadExistingData();
-    }
+    _descriptionController.addListener(() => setState(() {}));
+    if (widget.isEditing) _loadExistingData();
   }
 
   void _loadExistingData() {
-    setState(() {
-      _isLoadingData = true;
-    });
+    setState(() => _isLoadingData = true);
 
-    // Carregar dados nos controllers
-    if (widget.existingTitle != null) {
-      _titleController.text = widget.existingTitle!;
-    }
-    
-    if (widget.existingDescription != null) {
-      _descriptionController.text = widget.existingDescription!;
-    }
+    if (widget.existingTitle != null)       _titleController.text       = widget.existingTitle!;
+    if (widget.existingDescription != null) _descriptionController.text = widget.existingDescription!;
 
-    // Carregar profissão
-    selectedProfession = widget.existingProfession;
+    selectedProfession  = widget.existingProfession;
+    selectedState       = widget.existingState;
+    selectedCity        = widget.existingCity;
+    selectedSalaryType  = widget.existingSalaryType;
 
-    // Carregar estado e cidade
-    selectedState = widget.existingState;
-    selectedCity = widget.existingCity;
-
-    // Carregar tipo de salário
-    selectedSalaryType = widget.existingSalaryType;
-
-    // Carregar salário
-    if (widget.existingSalary != null && 
+    if (widget.existingSalary != null &&
         widget.existingSalary != 'A combinar' &&
         widget.existingSalaryType != 'A combinar') {
-      String salaryValue = widget.existingSalary!.replaceAll('R\$ ', '').replaceAll('.', '').replaceAll(',', '');
-      _salaryController.text = salaryValue;
+      _salaryController.text = widget.existingSalary!
+          .replaceAll('R\$ ', '')
+          .replaceAll('.', '')
+          .replaceAll(',', '');
     }
 
-    // Carregar mídias existentes
     if (widget.existingMedia != null) {
       if (widget.existingMedia!['images'] != null) {
-        final imagesList = widget.existingMedia!['images'] as List;
-        _existingImageUrls = imagesList.map((e) => e.toString()).toList();
+        _existingImageUrls = List<String>.from(widget.existingMedia!['images']);
       }
-      
       if (widget.existingMedia!['videos'] != null) {
-        final videosList = widget.existingMedia!['videos'] as List;
-        _existingVideoUrls = videosList.map((e) => e.toString()).toList();
+        _existingVideoUrls = List<String>.from(widget.existingMedia!['videos']);
       }
     }
 
-    setState(() {
-      _isLoadingData = false;
-    });
+    setState(() => _isLoadingData = false);
   }
 
   @override
@@ -168,352 +144,252 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     super.dispose();
   }
 
-  // ✅ NOVO MÉTODO - Upload usando Firebase Storage com compressão
-  Future<List<String>> _uploadAllMedia() async {
-    List<String> uploadedUrls = [];
-    int totalFiles = _selectedImages.length + _selectedVideos.length;
-    int currentFile = 0;
+  // ── FIX 1: upload separado por tipo — retorna (imageUrls, videoUrls) ──────
+  Future<(List<String>, List<String>)> _uploadAllMedia() async {
+    final List<String> uploadedImageUrls = [];
+    final List<String> uploadedVideoUrls = [];
 
-    // Upload das imagens
-    for (var image in _selectedImages) {
-      currentFile++;
+    final int total = _selectedImages.length + _selectedVideos.length;
+    int current = 0;
+
+    // Imagens
+    for (final image in _selectedImages) {
+      current++;
       setState(() {
-        _uploadStatus = 'Enviando imagem $currentFile de $totalFiles...';
+        _uploadStatus  = 'Enviando imagem $current de $total...';
         _uploadProgress = 0.0;
       });
 
-      String? url = await _storageService.uploadImage(
+      final String? url = await _storageService.uploadImage(
         file: image,
         folder: 'vacancies',
         userId: widget.localId,
         quality: 70,
-        onProgress: (progress) {
-          setState(() {
-            _uploadProgress = progress;
-          });
-        },
+        onProgress: (p) => setState(() => _uploadProgress = p),
       );
 
       if (url != null) {
-        uploadedUrls.add(url);
+        uploadedImageUrls.add(url);
       } else {
-        _showSnackBar('Erro ao enviar imagem $currentFile', Colors.red);
+        _showSnackBar('Erro ao enviar imagem $current', Colors.red);
       }
     }
 
-    // Upload dos vídeos
-    for (var video in _selectedVideos) {
-      currentFile++;
+    // Vídeos
+    for (final video in _selectedVideos) {
+      current++;
       setState(() {
-        _uploadStatus = 'Enviando vídeo $currentFile de $totalFiles...';
+        _uploadStatus  = 'Enviando vídeo $current de $total...';
         _uploadProgress = 0.0;
       });
 
-      String? url = await _storageService.uploadVideo(
+      final String? url = await _storageService.uploadVideo(
         file: video,
         folder: 'vacancies',
         userId: widget.localId,
-        onProgress: (progress) {
-          setState(() {
-            _uploadProgress = progress;
-          });
-        },
+        onProgress: (p) => setState(() => _uploadProgress = p),
       );
 
       if (url != null) {
-        uploadedUrls.add(url);
+        uploadedVideoUrls.add(url);
       } else {
-        _showSnackBar('Erro ao enviar vídeo $currentFile', Colors.red);
+        _showSnackBar('Erro ao enviar vídeo $current', Colors.red);
       }
     }
 
-    return uploadedUrls;
+    return (uploadedImageUrls, uploadedVideoUrls);
   }
 
   Future<void> _pickImages() async {
     try {
-      int totalImages = _selectedImages.length + _existingImageUrls.length;
-      if (totalImages >= 3) {
+      final int total = _selectedImages.length + _existingImageUrls.length;
+      if (total >= 3) {
         _showSnackBar('Você já adicionou o máximo de 3 fotos', Colors.orange);
         return;
       }
-
       final List<XFile> images = await _picker.pickMultiImage();
       if (images.isNotEmpty) {
-        int remainingSlots = 3 - totalImages;
-        List<File> imagesToAdd = images
-            .take(remainingSlots)
-            .map((img) => File(img.path))
-            .toList();
-
-        setState(() {
-          _selectedImages.addAll(imagesToAdd);
-        });
-
-        if (images.length > remainingSlots) {
-          _showSnackBar(
-            'Apenas ${imagesToAdd.length} foto(s) foi(ram) adicionada(s). Limite máximo: 3 fotos',
-            Colors.orange,
-          );
+        final int remaining = 3 - total;
+        final List<File> toAdd = images.take(remaining).map((x) => File(x.path)).toList();
+        setState(() => _selectedImages.addAll(toAdd));
+        if (images.length > remaining) {
+          _showSnackBar('Apenas ${toAdd.length} foto(s) adicionada(s). Limite: 3', Colors.orange);
         }
       }
     } catch (e) {
-      print('Erro ao selecionar imagens: $e');
       _showSnackBar('Erro ao selecionar imagens', Colors.red);
     }
   }
 
   Future<void> _pickVideo() async {
     try {
-      int totalVideos = _selectedVideos.length + _existingVideoUrls.length;
-      if (totalVideos >= 1) {
+      final int total = _selectedVideos.length + _existingVideoUrls.length;
+      if (total >= 1) {
         _showSnackBar('Você já adicionou o máximo de 1 vídeo', Colors.orange);
         return;
       }
-
       final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
-      if (video != null) {
-        setState(() {
-          _selectedVideos.add(File(video.path));
-        });
-      }
+      if (video != null) setState(() => _selectedVideos.add(File(video.path)));
     } catch (e) {
-      print('Erro ao selecionar vídeo: $e');
       _showSnackBar('Erro ao selecionar vídeo', Colors.red);
     }
   }
 
-  void _removeImage(int index) {
-    setState(() {
-      _selectedImages.removeAt(index);
-    });
-  }
+  void _removeImage(int index)         => setState(() => _selectedImages.removeAt(index));
+  void _removeVideo(int index)         => setState(() => _selectedVideos.removeAt(index));
 
-  void _removeVideo(int index) {
-    setState(() {
-      _selectedVideos.removeAt(index);
-    });
-  }
-
-  // ✅ ATUALIZADO: Marcar para deletar depois
   void _removeExistingImage(int index) {
-    String urlToRemove = _existingImageUrls[index];
-    
-    setState(() {
-      _existingImageUrls.removeAt(index);
-      _urlsToDelete.add(urlToRemove); // Marcar para deletar depois
-    });
+    final url = _existingImageUrls[index];
+    setState(() { _existingImageUrls.removeAt(index); _urlsToDelete.add(url); });
   }
 
-  // ✅ ATUALIZADO: Marcar para deletar depois
   void _removeExistingVideo(int index) {
-    String urlToRemove = _existingVideoUrls[index];
-    
-    setState(() {
-      _existingVideoUrls.removeAt(index);
-      _urlsToDelete.add(urlToRemove); // Marcar para deletar depois
-    });
+    final url = _existingVideoUrls[index];
+    setState(() { _existingVideoUrls.removeAt(index); _urlsToDelete.add(url); });
   }
 
   void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
+  // ── FIX 2: validação com mínimo de 80 caracteres na descrição ─────────────
   bool _validateFields() {
-    if (selectedProfession == null ||
-        _descriptionController.text.trim().isEmpty ||
-        selectedState == null ||
-        selectedCity == null) {
+    if (selectedProfession == null) {
+      _showSnackBar('Selecione a profissão da vaga', Colors.orange);
+      return false;
+    }
+
+    final desc = _descriptionController.text.trim();
+    if (desc.isEmpty) {
+      _showSnackBar('A descrição é obrigatória', Colors.orange);
+      _descriptionFocus.requestFocus();
+      return false;
+    }
+    if (desc.length < _minDescLen) {
       _showSnackBar(
-        'Por favor, preencha todos os campos obrigatórios',
+        'A descrição precisa ter pelo menos $_minDescLen caracteres (${desc.length}/$_minDescLen)',
         Colors.orange,
       );
+      _descriptionFocus.requestFocus();
+      return false;
+    }
+
+    if (selectedState == null) {
+      _showSnackBar('Selecione o estado', Colors.orange);
+      return false;
+    }
+    if (selectedCity == null) {
+      _showSnackBar('Selecione a cidade', Colors.orange);
       return false;
     }
     return true;
   }
 
-  // ✅ MÉTODO OTIMIZADO - Salvar vaga com Firebase Storage
   Future<void> _saveVacancy() async {
     if (!_validateFields()) return;
 
     setState(() {
-      _isUploading = true;
-      _uploadStatus = 'Preparando arquivos...';
+      _isUploading    = true;
+      _uploadStatus   = 'Preparando arquivos...';
       _uploadProgress = 0.0;
     });
 
     try {
-      // Upload das novas mídias
-      List<String> newMediaUrls = await _uploadAllMedia();
+      // ── FIX 1 em ação: recebe listas separadas por tipo ──────────────────
+      final (newImageUrls, newVideoUrls) = await _uploadAllMedia();
 
-      // Separar novas URLs por tipo
-      List<String> newImageUrls = [];
-      List<String> newVideoUrls = [];
-
-      for (String url in newMediaUrls) {
-        // Firebase Storage URLs contêm o tipo no path
-        if (url.contains('.jpg') || url.contains('.jpeg') || 
-            url.contains('.png') || url.contains('.webp')) {
-          newImageUrls.add(url);
-        } else if (url.contains('.mp4') || url.contains('.mov') || 
-                   url.contains('.avi')) {
-          newVideoUrls.add(url);
-        }
-      }
-
-      // Combinar URLs existentes com as novas
-      List<String> finalImageUrls = [..._existingImageUrls, ...newImageUrls];
-      List<String> finalVideoUrls = [..._existingVideoUrls, ...newVideoUrls];
+      final List<String> finalImageUrls = [..._existingImageUrls, ...newImageUrls];
+      final List<String> finalVideoUrls = [..._existingVideoUrls, ...newVideoUrls];
 
       // Processar salário
       String finalSalary = 'A combinar';
-      if (selectedSalaryType != null) {
-        if (selectedSalaryType == 'A combinar') {
-          finalSalary = 'A combinar';
-        } else if (_salaryController.text.trim().isNotEmpty) {
-          finalSalary = '${_salaryController.text.trim()}';
-        } else {
-          finalSalary = selectedSalaryType!;
-        }
+      if (selectedSalaryType != null && selectedSalaryType != 'A combinar') {
+        final raw = _salaryController.text.trim();
+        finalSalary = raw.isNotEmpty ? raw : selectedSalaryType!;
       }
 
-      setState(() {
-        _uploadStatus = 'Salvando vaga...';
-      });
+      setState(() => _uploadStatus = 'Salvando vaga...');
 
-      Map<String, dynamic> vacancyData = {
-        'title': _titleController.text.trim().isEmpty
-            ? null
-            : _titleController.text.trim(),
-        'profession': selectedProfession,
-        'state': selectedState,
-        'city': selectedCity,
+      final Map<String, dynamic> vacancyData = {
+        'title':         _titleController.text.trim().isEmpty ? null : _titleController.text.trim(),
+        'profession':    selectedProfession,
+        'state':         selectedState,
+        'city':          selectedCity,
         'email_contact': widget.emailContact,
         'phone_contact': widget.phoneContact,
-        'description': _descriptionController.text.trim(),
-        'salary': finalSalary,
-        'salary_type': selectedSalaryType,
-        'local_id': widget.localId,
+        'description':   _descriptionController.text.trim(),
+        'salary':        finalSalary,
+        'salary_type':   selectedSalaryType,
+        'local_id':      widget.localId,
         'midia': {
-          'images': finalImageUrls.isEmpty ? [] : finalImageUrls,
-          'videos': finalVideoUrls.isEmpty ? [] : finalVideoUrls,
+          'images': finalImageUrls,
+          'videos': finalVideoUrls,
         },
       };
 
       if (widget.isEditing && widget.vacancyId != null) {
-        // MODO EDIÇÃO: Atualizar vaga existente
         await _database.child('vacancy/${widget.vacancyId}').update(vacancyData);
-        
-        // ✅ NOVO: Deletar arquivos marcados APÓS salvar com sucesso
+
         if (_urlsToDelete.isNotEmpty) {
-          setState(() {
-            _uploadStatus = 'Limpando arquivos antigos...';
-          });
-          
-          for (String url in _urlsToDelete) {
+          setState(() => _uploadStatus = 'Limpando arquivos antigos...');
+          for (final url in _urlsToDelete) {
             await _storageService.deleteFile(url);
           }
         }
-        
         _showSnackBar('Vaga atualizada com sucesso!', Colors.green);
       } else {
-        // MODO CRIAÇÃO: Criar nova vaga
         vacancyData['created_at'] = DateTime.now().toIso8601String();
-        vacancyData['status'] = 'Aberta';
-        vacancyData['requests'] = [];
-        vacancyData['views'] = {
-          'owner_last_viewed': null,
-          'request_views': {},
+        vacancyData['status']     = 'Aberta';
+        vacancyData['requests']   = [];
+        vacancyData['views']      = {'owner_last_viewed': null, 'request_views': {}};
+        vacancyData['stats']      = {
+          'total_views':         0,
+          'unique_viewers':      [],
+          'created_timestamp':   DateTime.now().millisecondsSinceEpoch,
+          'total_applications':  0,
         };
-        vacancyData['stats'] = {
-          'total_views': 0, 
-          'unique_viewers': [],
-          'created_timestamp': DateTime.now().millisecondsSinceEpoch,
-        };
-        
         await _database.child('vacancy').push().set(vacancyData);
         _showSnackBar('Vaga criada com sucesso!', Colors.green);
       }
 
-      setState(() {
-        _isUploading = false;
-      });
-
-      await Future.delayed(Duration(seconds: 1));
-      
-      if (mounted) {
-        Navigator.pop(context, true);
-      }
+      setState(() => _isUploading = false);
+      await Future.delayed(const Duration(seconds: 1));
+      if (mounted) Navigator.pop(context, true);
     } catch (e) {
       print('Erro ao salvar vaga: $e');
-      setState(() {
-        _isUploading = false;
-      });
+      setState(() => _isUploading = false);
       _showSnackBar('Erro ao salvar vaga. Tente novamente.', Colors.red);
     }
   }
 
   void _viewImageFullscreen(File imageFile, int initialIndex) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FullscreenMediaViewer(
-          images: _selectedImages,
-          initialIndex: initialIndex,
-          isVideo: false,
-        ),
-      ),
-    );
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => FullscreenMediaViewer(
+        images: _selectedImages, initialIndex: initialIndex, isVideo: false)));
   }
 
   void _viewVideoFullscreen(File videoFile, int initialIndex) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FullscreenMediaViewer(
-          videos: _selectedVideos,
-          initialIndex: initialIndex,
-          isVideo: true,
-        ),
-      ),
-    );
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => FullscreenMediaViewer(
+        videos: _selectedVideos, initialIndex: initialIndex, isVideo: true)));
   }
 
   void _viewExistingImageFullscreen(String imageUrl) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-          ),
-          body: Center(
-            child: InteractiveViewer(
-              child: Image.network(imageUrl),
-            ),
-          ),
-        ),
-      ),
-    );
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(backgroundColor: Colors.black, foregroundColor: Colors.white),
+        body: Center(child: InteractiveViewer(child: Image.network(imageUrl))))));
   }
 
   void _viewExistingVideoFullscreen(String videoUrl) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => VideoPlayerScreen(videoUrl: videoUrl),
-      ),
-    );
+    Navigator.push(context, MaterialPageRoute(
+      builder: (_) => VideoPlayerScreen(videoUrl: videoUrl)));
   }
 
   @override
@@ -521,30 +397,19 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     if (_isLoadingData) {
       return Scaffold(
         backgroundColor: Colors.grey[50],
-        appBar: AppBar(
-          title: Text('Carregando...'),
-          backgroundColor: Colors.white,
-        ),
-        body: Center(
-          child: CircularProgressIndicator(
-            color: Color(0xFFFF6B35),
-          ),
-        ),
+        appBar: AppBar(title: const Text('Carregando...'), backgroundColor: Colors.white),
+        body: const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35))),
       );
     }
 
     return GestureDetector(
-      onTap: () {
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          FocusScope.of(context).unfocus();
-        });
-      },
+      onTap: () => FocusScope.of(context).unfocus(),
       child: Scaffold(
         backgroundColor: Colors.grey[50],
         appBar: AppBar(
           title: Text(
             widget.isEditing ? 'Editar Vaga' : 'Nova Vaga',
-            style: TextStyle(fontWeight: FontWeight.bold),
+            style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           backgroundColor: Colors.white,
           foregroundColor: Colors.black87,
@@ -553,26 +418,18 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
         body: Stack(
           children: [
             SingleChildScrollView(
-              padding: EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionTitle(
-                    'Informações Básicas',
-                    Icons.assignment,
-                    true,
-                  ),
-                  SizedBox(height: 16),
+                  _buildSectionTitle('Informações Básicas', Icons.assignment, true),
+                  const SizedBox(height: 16),
 
                   ProfessionDropdown(
                     initialValue: selectedProfession,
-                    onChanged: (value) {
-                      setState(() {
-                        selectedProfession = value;
-                      });
-                    },
+                    onChanged: (value) => setState(() => selectedProfession = value),
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
                   _buildTextField(
                     controller: _titleController,
@@ -581,166 +438,108 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
                     hint: 'Ex: Vaga urgente para pedreiro experiente',
                     icon: Icons.title,
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                  _buildTextField(
-                    controller: _descriptionController,
-                    focusNode: _descriptionFocus,
-                    label: 'Descrição',
-                    hint: 'Descreva os requisitos e responsabilidades...',
-                    icon: Icons.description,
-                    maxLines: 5,
-                  ),
-                  SizedBox(height: 16),
+                  // ── Campo de descrição com contador de caracteres ──────────
+                  _buildDescriptionField(),
+                  const SizedBox(height: 16),
 
                   StateDropdown(
                     initialValue: selectedState,
-                    onChanged: (value) {
-                      setState(() {
-                        selectedState = value;
-                        selectedCity = null;
-                      });
-                    },
+                    onChanged: (value) => setState(() { selectedState = value; selectedCity = null; }),
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
                   CityDropdown(
                     selectedState: selectedState,
                     initialValue: selectedCity,
-                    onChanged: (value) {
-                      setState(() {
-                        selectedCity = value;
-                      });
-                    },
+                    onChanged: (value) => setState(() => selectedCity = value),
                   ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
                   _buildSalaryTypeDropdown(),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                  if (selectedSalaryType != null &&
-                      selectedSalaryType != 'A combinar')
+                  if (selectedSalaryType != null && selectedSalaryType != 'A combinar') ...[
                     _buildSalaryField(),
-                  if (selectedSalaryType != null &&
-                      selectedSalaryType != 'A combinar')
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
+                  ],
 
-                  SizedBox(height: 16),
-
-                  _buildSectionTitle(
-                    'Mídia (Opcional)',
-                    Icons.photo_library,
-                    false,
-                  ),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  _buildSectionTitle('Mídia (Opcional)', Icons.photo_library, false),
+                  const SizedBox(height: 16),
                   _buildMediaUploadSection(),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
 
-                  // MÍDIAS EXISTENTES (URLs do Firebase)
                   if (_existingImageUrls.isNotEmpty) ...[
-                    _buildExistingMediaGallery(
-                      title: 'Imagens Atuais',
-                      items: _existingImageUrls,
-                      isVideo: false,
-                    ),
-                    SizedBox(height: 16),
+                    _buildExistingMediaGallery(title: 'Imagens Atuais', items: _existingImageUrls, isVideo: false),
+                    const SizedBox(height: 16),
                   ],
-
                   if (_existingVideoUrls.isNotEmpty) ...[
-                    _buildExistingMediaGallery(
-                      title: 'Vídeos Atuais',
-                      items: _existingVideoUrls,
-                      isVideo: true,
-                    ),
-                    SizedBox(height: 16),
+                    _buildExistingMediaGallery(title: 'Vídeos Atuais', items: _existingVideoUrls, isVideo: true),
+                    const SizedBox(height: 16),
                   ],
-
-                  // NOVAS MÍDIAS SELECIONADAS (Files locais)
                   if (_selectedImages.isNotEmpty) ...[
-                    _buildMediaGallery(
-                      title: 'Novas Imagens',
-                      items: _selectedImages,
-                      isVideo: false,
-                    ),
-                    SizedBox(height: 16),
+                    _buildMediaGallery(title: 'Novas Imagens', items: _selectedImages, isVideo: false),
+                    const SizedBox(height: 16),
                   ],
-
                   if (_selectedVideos.isNotEmpty) ...[
-                    _buildMediaGallery(
-                      title: 'Novos Vídeos',
-                      items: _selectedVideos,
-                      isVideo: true,
-                    ),
-                    SizedBox(height: 16),
+                    _buildMediaGallery(title: 'Novos Vídeos', items: _selectedVideos, isVideo: true),
+                    const SizedBox(height: 16),
                   ],
 
-                  SizedBox(height: 16),
+                  const SizedBox(height: 8),
 
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       onPressed: _isUploading ? null : _saveVacancy,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFFFF6B35),
+                        backgroundColor: const Color(0xFFFF6B35),
                         foregroundColor: Colors.white,
-                        padding: EdgeInsets.symmetric(vertical: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       child: Text(
                         _isUploading
                             ? 'Salvando...'
-                            : (widget.isEditing
-                                  ? 'Salvar Alterações'
-                                  : 'Criar Vaga'),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+                            : (widget.isEditing ? 'Salvar Alterações' : 'Criar Vaga'),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
-                  SizedBox(height: 20),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
 
-            // ✅ NOVO: Overlay melhorado com progresso detalhado
+            // Overlay de progresso
             if (_isUploading)
               Container(
                 color: Colors.black54,
                 child: Center(
                   child: Card(
-                    margin: EdgeInsets.all(20),
+                    margin: const EdgeInsets.all(20),
                     child: Padding(
-                      padding: EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(24),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircularProgressIndicator(
                             value: _uploadProgress > 0 ? _uploadProgress : null,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Color(0xFFFF6B35),
-                            ),
+                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFFF6B35)),
                             strokeWidth: 3,
                           ),
-                          SizedBox(height: 16),
-                          Text(
-                            _uploadStatus,
-                            style: TextStyle(fontSize: 16),
-                            textAlign: TextAlign.center,
-                          ),
+                          const SizedBox(height: 16),
+                          Text(_uploadStatus,
+                            style: const TextStyle(fontSize: 16),
+                            textAlign: TextAlign.center),
                           if (_uploadProgress > 0) ...[
-                            SizedBox(height: 8),
+                            const SizedBox(height: 8),
                             Text(
                               '${(_uploadProgress * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
-                            ),
+                              style: TextStyle(fontSize: 14, color: Colors.grey[600])),
                           ],
                         ],
                       ),
@@ -754,47 +553,108 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     );
   }
 
+  // ── Campo de descrição com contador e barra de progresso ──────────────────
+  Widget _buildDescriptionField() {
+    final bool reached = _descLen >= _minDescLen;
+    final double progress = (_descLen / _minDescLen).clamp(0.0, 1.0);
+    final Color barColor = reached
+        ? const Color(0xFF22C55E)
+        : (_descLen > _minDescLen * 0.6 ? Colors.orange : Colors.red.shade300);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Descrição *',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+            // contador XX/80
+            Text(
+              '$_descLen / $_minDescLen',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: reached ? const Color(0xFF22C55E) : Colors.grey[500]),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: reached
+                  ? const Color(0xFF22C55E)
+                  : (_descLen > 0 ? Colors.orange.shade200 : Colors.grey.shade300),
+              width: 1.5,
+            ),
+          ),
+          child: TextField(
+            controller: _descriptionController,
+            focusNode: _descriptionFocus,
+            maxLines: 5,
+            decoration: InputDecoration(
+              hintText: 'Descreva os requisitos, responsabilidades e condições da vaga...',
+              hintStyle: TextStyle(color: Colors.grey[400]),
+              prefixIcon: Padding(
+                padding: const EdgeInsets.only(bottom: 68),
+                child: Icon(Icons.description, color: const Color(0xFFFF6B35), size: 20)),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.all(16),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        // Barra de progresso visual
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 4,
+            backgroundColor: Colors.grey.shade200,
+            valueColor: AlwaysStoppedAnimation<Color>(barColor),
+          ),
+        ),
+        if (!reached && _descLen > 0) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Faltam ${_minDescLen - _descLen} caracteres para o mínimo',
+            style: TextStyle(fontSize: 11, color: Colors.orange.shade700),
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildSalaryTypeDropdown() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Tipo de Salário (Opcional)',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF374151),
-          ),
-        ),
-        SizedBox(height: 8),
+        Text('Tipo de Salário (Opcional)',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF374151))),
+        const SizedBox(height: 8),
         InkWell(
-          onTap: () {
-            WidgetsBinding.instance.addPostFrameCallback((_) async {
-              FocusScope.of(context).unfocus();
-            });
-            _showSalaryTypeDialog();
-          },
+          onTap: () { FocusScope.of(context).unfocus(); _showSalaryTypeDialog(); },
           borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Color(0xFFD1D5DB), width: 1),
-              color: Color(0xFFF9FAFB),
+              border: Border.all(color: const Color(0xFFD1D5DB), width: 1),
+              color: const Color(0xFFF9FAFB),
             ),
             child: Row(
               children: [
                 Icon(Icons.schedule, color: Colors.grey[400], size: 22),
-                SizedBox(width: 12),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
                     selectedSalaryType ?? 'Selecione o tipo de salário',
                     style: TextStyle(
-                      color: selectedSalaryType != null
-                          ? Color(0xFF1F2937)
-                          : Colors.grey[400],
-                      fontSize: 16,
-                    ),
+                      color: selectedSalaryType != null ? const Color(0xFF1F2937) : Colors.grey[400],
+                      fontSize: 16),
                   ),
                 ),
                 Icon(Icons.arrow_drop_down, color: Colors.grey[600]),
@@ -807,113 +667,63 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
   }
 
   void _showSalaryTypeDialog() async {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      FocusScope.of(context).unfocus();
-    });
-
+    FocusScope.of(context).unfocus();
     await showDialog(
       context: context,
       barrierDismissible: true,
       builder: (BuildContext dialogContext) {
         return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Container(
-            constraints: BoxConstraints(maxHeight: 500),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 500),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding: EdgeInsets.all(20),
-                  decoration: BoxDecoration(
+                  padding: const EdgeInsets.all(20),
+                  decoration: const BoxDecoration(
                     color: Color(0xFF3B82F6),
                     borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(20),
-                      topRight: Radius.circular(20),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.schedule, color: Colors.white),
-                      SizedBox(width: 12),
-                      Text(
-                        'Tipo de Salário',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+                      topLeft: Radius.circular(20), topRight: Radius.circular(20))),
+                  child: Row(children: [
+                    const Icon(Icons.schedule, color: Colors.white),
+                    const SizedBox(width: 12),
+                    const Text('Tipo de Salário',
+                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                  ]),
                 ),
-                Expanded(
+                Flexible(
                   child: ListView.builder(
                     shrinkWrap: true,
                     itemCount: salaryTypes.length,
                     itemBuilder: (context, index) {
                       final type = salaryTypes[index];
                       final isSelected = type == selectedSalaryType;
-
                       return InkWell(
                         onTap: () {
                           setState(() {
                             selectedSalaryType = type;
-                            if (type == 'A combinar') {
-                              _salaryController.clear();
-                            }
+                            if (type == 'A combinar') _salaryController.clear();
                           });
                           Navigator.pop(dialogContext);
                         },
                         child: Container(
-                          padding: EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 16,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                           decoration: BoxDecoration(
-                            color: isSelected
-                                ? Color(0xFF3B82F6).withOpacity(0.1)
-                                : Colors.transparent,
-                            border: Border(
-                              bottom: BorderSide(
-                                color: Colors.grey[200]!,
-                                width: 1,
-                              ),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.attach_money,
-                                color: isSelected
-                                    ? Color(0xFF3B82F6)
-                                    : Colors.grey[600],
-                                size: 22,
-                              ),
-                              SizedBox(width: 16),
-                              Expanded(
-                                child: Text(
-                                  type,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: isSelected
-                                        ? Color(0xFF3B82F6)
-                                        : Colors.black87,
-                                    fontWeight: isSelected
-                                        ? FontWeight.w600
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                              ),
-                              if (isSelected)
-                                Icon(
-                                  Icons.check_circle,
-                                  color: Color(0xFF3B82F6),
-                                  size: 22,
-                                ),
-                            ],
-                          ),
+                            color: isSelected ? const Color(0xFF3B82F6).withOpacity(0.1) : Colors.transparent,
+                            border: Border(bottom: BorderSide(color: Colors.grey[200]!, width: 1))),
+                          child: Row(children: [
+                            Icon(Icons.attach_money,
+                              color: isSelected ? const Color(0xFF3B82F6) : Colors.grey[600], size: 22),
+                            const SizedBox(width: 16),
+                            Expanded(child: Text(type,
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: isSelected ? const Color(0xFF3B82F6) : Colors.black87,
+                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal))),
+                            if (isSelected)
+                              const Icon(Icons.check_circle, color: Color(0xFF3B82F6), size: 22),
+                          ]),
                         ),
                       );
                     },
@@ -925,30 +735,21 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
         );
       },
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      FocusScope.of(context).unfocus();
-    });
+    FocusScope.of(context).unfocus();
   }
 
   Widget _buildSalaryField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Valor do Salário',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey[700],
-          ),
-        ),
-        SizedBox(height: 8),
+        Text('Valor do Salário',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+        const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
+            border: Border.all(color: Colors.grey[300]!)),
           child: TextField(
             controller: _salaryController,
             focusNode: _salaryFocus,
@@ -960,13 +761,9 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
             decoration: InputDecoration(
               hintText: 'R\$ 0,00',
               hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: Icon(
-                Icons.attach_money,
-                color: Color(0xFFFF6B35),
-                size: 20,
-              ),
+              prefixIcon: const Icon(Icons.attach_money, color: Color(0xFFFF6B35), size: 20),
               border: InputBorder.none,
-              contentPadding: EdgeInsets.all(16),
+              contentPadding: const EdgeInsets.all(16),
             ),
           ),
         ),
@@ -977,19 +774,13 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
   Widget _buildSectionTitle(String title, IconData icon, bool isRequired) {
     return Row(
       children: [
-        Icon(icon, color: Color(0xFFFF6B35), size: 22),
-        SizedBox(width: 8),
-        Text(
-          title,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.black87,
-          ),
-        ),
+        Icon(icon, color: const Color(0xFFFF6B35), size: 22),
+        const SizedBox(width: 8),
+        Text(title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
         if (isRequired) ...[
-          SizedBox(width: 6),
-          Text('*', style: TextStyle(color: Colors.red, fontSize: 18)),
+          const SizedBox(width: 6),
+          const Text('*', style: TextStyle(color: Colors.red, fontSize: 18)),
         ],
       ],
     );
@@ -1006,21 +797,14 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Colors.grey[700],
-          ),
-        ),
-        SizedBox(height: 8),
+        Text(label,
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.grey[700])),
+        const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
+            border: Border.all(color: Colors.grey[300]!)),
           child: TextField(
             controller: controller,
             focusNode: focusNode,
@@ -1028,9 +812,9 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: Icon(icon, color: Color(0xFFFF6B35), size: 20),
+              prefixIcon: Icon(icon, color: const Color(0xFFFF6B35), size: 20),
               border: InputBorder.none,
-              contentPadding: EdgeInsets.all(16),
+              contentPadding: const EdgeInsets.all(16),
             ),
           ),
         ),
@@ -1041,9 +825,8 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
   Widget _buildMediaUploadSection() {
     final int totalImages = _selectedImages.length + _existingImageUrls.length;
     final int totalVideos = _selectedVideos.length + _existingVideoUrls.length;
-    
-    final bool canAddMoreImages = totalImages < 3;
-    final bool canAddVideo = totalVideos < 1;
+    final bool canAddImages = totalImages < 3;
+    final bool canAddVideo  = totalVideos < 1;
 
     return Container(
       decoration: BoxDecoration(
@@ -1051,55 +834,40 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.grey[300]!),
       ),
-      padding: EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       child: Column(
         children: [
           _buildUploadButton(
             Icons.photo_camera,
-            canAddMoreImages
+            canAddImages
                 ? 'Adicionar Fotos da Obra ($totalImages/3)'
                 : 'Limite de 3 fotos atingido',
-            canAddMoreImages ? _pickImages : () {},
-            enabled: canAddMoreImages,
+            canAddImages ? _pickImages : () {},
+            enabled: canAddImages,
           ),
-    
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
           Container(
-            padding: EdgeInsets.all(12),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.blue[50],
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, size: 18, color: Colors.blue[700]),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Máximo: 3 fotos por vaga',
-                    style: TextStyle(fontSize: 12, color: Colors.blue[900]),
-                  ),
-                ),
-              ],
-            ),
+              color: Colors.blue[50], borderRadius: BorderRadius.circular(10)),
+            child: Row(children: [
+              Icon(Icons.info_outline, size: 18, color: Colors.blue[700]),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Máximo: 3 fotos por vaga',
+                style: TextStyle(fontSize: 12, color: Colors.blue[900]))),
+            ]),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildUploadButton(
-    IconData icon,
-    String label,
-    VoidCallback onTap, {
-    bool enabled = true,
-  }) {
+  Widget _buildUploadButton(IconData icon, String label, VoidCallback onTap, {bool enabled = true}) {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(
           color: enabled ? Colors.grey[300]! : Colors.grey[200]!,
-          style: BorderStyle.solid,
-        ),
+          style: BorderStyle.solid),
         borderRadius: BorderRadius.circular(10),
         color: enabled ? Colors.transparent : Colors.grey[100],
       ),
@@ -1109,36 +877,22 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
           onTap: enabled ? onTap : null,
           borderRadius: BorderRadius.circular(10),
           child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  color: enabled ? Color(0xFFFF6B35) : Colors.grey[400],
-                  size: 22,
-                ),
-                SizedBox(width: 10),
-                Flexible(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: enabled ? Colors.grey[700] : Colors.grey[400],
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
-            ),
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(icon, color: enabled ? const Color(0xFFFF6B35) : Colors.grey[400], size: 22),
+              const SizedBox(width: 10),
+              Flexible(child: Text(label,
+                style: TextStyle(
+                  color: enabled ? Colors.grey[700] : Colors.grey[400],
+                  fontSize: 14, fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center)),
+            ]),
           ),
         ),
       ),
     );
   }
 
-  // GALERIA DE MÍDIAS EXISTENTES (URLs)
   Widget _buildExistingMediaGallery({
     required String title,
     required List<String> items,
@@ -1147,132 +901,60 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(
-              isVideo ? Icons.videocam : Icons.photo,
-              color: Colors.blue[700],
-              size: 18,
-            ),
-            SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            SizedBox(width: 8),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.blue[700],
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${items.length}',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 12),
-        Container(
+        Row(children: [
+          Icon(isVideo ? Icons.videocam : Icons.photo, color: Colors.blue[700], size: 18),
+          const SizedBox(width: 8),
+          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(color: Colors.blue[700], borderRadius: BorderRadius.circular(10)),
+            child: Text('${items.length}',
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+        ]),
+        const SizedBox(height: 12),
+        SizedBox(
           height: 120,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: items.length,
             itemBuilder: (context, index) {
               return Container(
-                margin: EdgeInsets.only(right: 12),
-                child: Stack(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        if (isVideo) {
-                          _viewExistingVideoFullscreen(items[index]);
-                        } else {
-                          _viewExistingImageFullscreen(items[index]);
-                        }
-                      },
+                margin: const EdgeInsets.only(right: 12),
+                child: Stack(children: [
+                  GestureDetector(
+                    onTap: () => isVideo
+                        ? _viewExistingVideoFullscreen(items[index])
+                        : _viewExistingImageFullscreen(items[index]),
+                    child: Container(
+                      width: 120, height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.blue[300]!, width: 2)),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: isVideo
+                            ? Stack(alignment: Alignment.center, children: [
+                                Container(color: Colors.black,
+                                  child: const Center(child: Icon(Icons.videocam, size: 40, color: Colors.white70))),
+                                const Icon(Icons.play_circle_fill, size: 50, color: Colors.white),
+                              ])
+                            : Image.network(items[index], fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  color: Colors.grey[300],
+                                  child: Icon(Icons.broken_image, size: 40, color: Colors.grey[600]))),
+                      ),
+                    ),
+                  ),
+                  Positioned(top: 4, right: 4,
+                    child: GestureDetector(
+                      onTap: () => isVideo ? _removeExistingVideo(index) : _removeExistingImage(index),
                       child: Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.blue[300]!, width: 2),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: isVideo
-                              ? Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    Container(
-                                      color: Colors.black,
-                                      child: Center(
-                                        child: Icon(
-                                          Icons.videocam,
-                                          size: 40,
-                                          color: Colors.white70,
-                                        ),
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.play_circle_fill,
-                                      size: 50,
-                                      color: Colors.white,
-                                    ),
-                                  ],
-                                )
-                              : Image.network(
-                                  items[index],
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: Colors.grey[300],
-                                      child: Icon(
-                                        Icons.broken_image,
-                                        size: 40,
-                                        color: Colors.grey[600],
-                                      ),
-                                    );
-                                  },
-                                ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: GestureDetector(
-                        onTap: () {
-                          isVideo
-                              ? _removeExistingVideo(index)
-                              : _removeExistingImage(index);
-                        },
-                        child: Container(
-                          padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.close,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                        child: const Icon(Icons.close, color: Colors.white, size: 16)))),
+                ]),
               );
             },
           ),
@@ -1281,7 +963,6 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     );
   }
 
-  // GALERIA DE NOVAS MÍDIAS (Files locais)
   Widget _buildMediaGallery({
     required String title,
     required List<File> items,
@@ -1290,117 +971,57 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Icon(
-              isVideo ? Icons.videocam : Icons.photo,
-              color: Color(0xFFFF6B35),
-              size: 18,
-            ),
-            SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            SizedBox(width: 8),
-            Container(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.blue,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${items.length}',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: 12),
-        Container(
+        Row(children: [
+          Icon(isVideo ? Icons.videocam : Icons.photo, color: const Color(0xFFFF6B35), size: 18),
+          const SizedBox(width: 8),
+          Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(color: Colors.blue, borderRadius: BorderRadius.circular(10)),
+            child: Text('${items.length}',
+              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold))),
+        ]),
+        const SizedBox(height: 12),
+        SizedBox(
           height: 120,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             itemCount: items.length,
             itemBuilder: (context, index) {
               return Container(
-                margin: EdgeInsets.only(right: 12),
-                child: Stack(
-                  children: [
-                    GestureDetector(
-                      onTap: () {
-                        if (isVideo) {
-                          _viewVideoFullscreen(items[index], index);
-                        } else {
-                          _viewImageFullscreen(items[index], index);
-                        }
-                      },
+                margin: const EdgeInsets.only(right: 12),
+                child: Stack(children: [
+                  GestureDetector(
+                    onTap: () => isVideo
+                        ? _viewVideoFullscreen(items[index], index)
+                        : _viewImageFullscreen(items[index], index),
+                    child: Container(
+                      width: 120, height: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[300]!)),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: isVideo
+                            ? Stack(alignment: Alignment.center, children: [
+                                Container(color: Colors.black,
+                                  child: const Center(child: Icon(Icons.videocam, size: 40, color: Colors.white70))),
+                                const Icon(Icons.play_circle_fill, size: 50, color: Colors.white),
+                              ])
+                            : Image.file(items[index], fit: BoxFit.cover),
+                      ),
+                    ),
+                  ),
+                  Positioned(top: 4, right: 4,
+                    child: GestureDetector(
+                      onTap: () => isVideo ? _removeVideo(index) : _removeImage(index),
                       child: Container(
-                        width: 120,
-                        height: 120,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey[300]!),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: isVideo
-                              ? Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    Container(
-                                      color: Colors.black,
-                                      child: Center(
-                                        child: Icon(
-                                          Icons.videocam,
-                                          size: 40,
-                                          color: Colors.white70,
-                                        ),
-                                      ),
-                                    ),
-                                    Icon(
-                                      Icons.play_circle_fill,
-                                      size: 50,
-                                      color: Colors.white,
-                                    ),
-                                  ],
-                                )
-                              : Image.file(items[index], fit: BoxFit.cover),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 4,
-                      right: 4,
-                      child: GestureDetector(
-                        onTap: () {
-                          isVideo ? _removeVideo(index) : _removeImage(index);
-                        },
-                        child: Container(
-                          padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.close,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                        child: const Icon(Icons.close, color: Colors.white, size: 16)))),
+                ]),
               );
             },
           ),
@@ -1410,9 +1031,9 @@ class _EditInfoVacancyState extends State<EditInfoVacancy> {
   }
 }
 
+// ── VideoPlayerScreen ─────────────────────────────────────────────────────────
 class VideoPlayerScreen extends StatefulWidget {
   final String videoUrl;
-
   const VideoPlayerScreen({Key? key, required this.videoUrl}) : super(key: key);
 
   @override
@@ -1423,7 +1044,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   late VideoPlayerController _videoController;
   ChewieController? _chewieController;
   bool _isLoading = true;
-  bool _hasError = false;
+  bool _hasError  = false;
 
   @override
   void initState() {
@@ -1433,27 +1054,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   Future<void> _initializePlayer() async {
     try {
-      _videoController = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-      );
-
+      _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl));
       await _videoController.initialize();
-
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
         autoPlay: true,
         looping: false,
         aspectRatio: _videoController.value.aspectRatio,
       );
-
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-        _hasError = true;
-      });
+      setState(() { _isLoading = false; _hasError = true; });
     }
   }
 
@@ -1471,26 +1082,21 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text('Vídeo'),
+        title: const Text('Vídeo'),
       ),
       body: Center(
         child: _isLoading
-            ? CircularProgressIndicator(color: Color(0xFFFF6B35))
+            ? const CircularProgressIndicator(color: Color(0xFFFF6B35))
             : _hasError
-                ? Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error_outline, size: 64, color: Colors.white),
-                      SizedBox(height: 16),
-                      Text(
-                        'Erro ao carregar vídeo',
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
-                    ],
-                  )
+                ? const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.error_outline, size: 64, color: Colors.white),
+                    SizedBox(height: 16),
+                    Text('Erro ao carregar vídeo',
+                      style: TextStyle(color: Colors.white, fontSize: 16)),
+                  ])
                 : _chewieController != null
                     ? Chewie(controller: _chewieController!)
-                    : SizedBox(),
+                    : const SizedBox(),
       ),
     );
   }

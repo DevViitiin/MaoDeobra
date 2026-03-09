@@ -216,8 +216,36 @@ class _InfoVacancyState extends State<InfoVacancy>
           }
         }
       }
-      
+
+      // 🔢 Conta quantos candidatos ainda não foram visualizados (badge pendente)
+      int unreadCandidates = 0;
+      try {
+        final requestViewsSnap = await _database
+            .child('vacancy/${widget.vacancyId}/views/request_views')
+            .get();
+
+        if (requestViewsSnap.exists) {
+          final views = Map<String, dynamic>.from(requestViewsSnap.value as Map);
+          for (final entry in views.values) {
+            final viewData = Map<String, dynamic>.from(entry as Map);
+            if (viewData['viewed_by_owner'] == false) {
+              unreadCandidates++;
+            }
+          }
+        }
+      } catch (e) {
+        print('⚠️ Erro ao contar candidatos não lidos: $e');
+      }
+
+      // 🗑️ Remove a vaga do banco
       await _database.child('vacancy/${widget.vacancyId}').remove();
+
+      // 📉 Decrementa o badge pelo número de candidatos não lidos
+      for (int i = 0; i < unreadCandidates; i++) {
+        await BadgeHelper.decrementRequestBadge(widget.localId);
+      }
+
+      print('✅ Vaga excluída. $unreadCandidates badge(s) decrementado(s).');
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

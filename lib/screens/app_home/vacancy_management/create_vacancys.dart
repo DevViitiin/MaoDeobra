@@ -81,63 +81,58 @@ class _CreateVacancysState extends State<CreateVacancys> {
     super.dispose();
   }
 
-  Future<List<String>> _uploadAllMedia() async {
-    List<String> uploadedUrls = [];
-    int totalFiles = _selectedImages.length + _selectedVideos.length;
+  Future<({List<String> imageUrls, List<String> videoUrls})>
+      _uploadAllMedia() async {
+    final List<String> imageUrls = [];
+    final List<String> videoUrls = [];
+
+    final int totalFiles = _selectedImages.length + _selectedVideos.length;
     int currentFile = 0;
 
-    for (var image in _selectedImages) {
+    for (final File image in _selectedImages) {
       currentFile++;
       setState(() {
         _uploadStatus = 'Enviando imagem $currentFile de $totalFiles...';
         _uploadProgress = 0.0;
       });
 
-      String? url = await _storageService.uploadImage(
+      final String? url = await _storageService.uploadImage(
         file: image,
         folder: 'vacancies',
         userId: widget.localId,
         quality: 70,
-        onProgress: (progress) {
-          setState(() {
-            _uploadProgress = progress;
-          });
-        },
+        onProgress: (progress) => setState(() => _uploadProgress = progress),
       );
 
       if (url != null) {
-        uploadedUrls.add(url);
+        imageUrls.add(url);
       } else {
         _showSnackBar('Erro ao enviar imagem $currentFile', Colors.red);
       }
     }
 
-    for (var video in _selectedVideos) {
+    for (final File video in _selectedVideos) {
       currentFile++;
       setState(() {
         _uploadStatus = 'Enviando vídeo $currentFile de $totalFiles...';
         _uploadProgress = 0.0;
       });
 
-      String? url = await _storageService.uploadVideo(
+      final String? url = await _storageService.uploadVideo(
         file: video,
         folder: 'vacancies',
         userId: widget.localId,
-        onProgress: (progress) {
-          setState(() {
-            _uploadProgress = progress;
-          });
-        },
+        onProgress: (progress) => setState(() => _uploadProgress = progress),
       );
 
       if (url != null) {
-        uploadedUrls.add(url);
+        videoUrls.add(url);
       } else {
         _showSnackBar('Erro ao enviar vídeo $currentFile', Colors.red);
       }
     }
 
-    return uploadedUrls;
+    return (imageUrls: imageUrls, videoUrls: videoUrls);
   }
 
   Future<void> _pickImages() async {
@@ -146,10 +141,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
       return;
     }
 
-    // 1️⃣ Checa/solicita permissão de galeria
     var result = await PermissionUtil.checkAndRequest(isCamera: false);
 
-    // 2️⃣ Negada (não permanente) → oferece tentar de novo UMA vez
     if (result == PermissionResult.denied) {
       final wantsToRetry = await PermissionUtil.showPermissionDialog(
         context: context,
@@ -157,13 +150,10 @@ class _CreateVacancysState extends State<CreateVacancys> {
         permissionLabel: 'galeria',
         usageReason: 'para adicionar fotos à vaga',
       );
-
       if (!wantsToRetry) return;
-
       result = await PermissionUtil.checkAndRequest(isCamera: false);
     }
 
-    // 3️⃣ Ainda sem permissão → diálogo correto
     if (result != PermissionResult.granted) {
       await PermissionUtil.showPermissionDialog(
         context: context,
@@ -174,19 +164,14 @@ class _CreateVacancysState extends State<CreateVacancys> {
       return;
     }
 
-    // 4️⃣ Permissão concedida → abre picker
     try {
       final List<XFile> images = await _picker.pickMultiImage();
       if (images.isNotEmpty) {
-        int remainingSlots = 3 - _selectedImages.length;
-        List<File> imagesToAdd = images
-            .take(remainingSlots)
-            .map((img) => File(img.path))
-            .toList();
+        final int remainingSlots = 3 - _selectedImages.length;
+        final List<File> imagesToAdd =
+            images.take(remainingSlots).map((img) => File(img.path)).toList();
 
-        setState(() {
-          _selectedImages.addAll(imagesToAdd);
-        });
+        setState(() => _selectedImages.addAll(imagesToAdd));
 
         if (images.length > remainingSlots) {
           _showSnackBar(
@@ -207,10 +192,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
       return;
     }
 
-    // 1️⃣ Checa/solicita permissão de galeria
     var result = await PermissionUtil.checkAndRequest(isCamera: false);
 
-    // 2️⃣ Negada (não permanente) → oferece tentar de novo UMA vez
     if (result == PermissionResult.denied) {
       final wantsToRetry = await PermissionUtil.showPermissionDialog(
         context: context,
@@ -218,13 +201,10 @@ class _CreateVacancysState extends State<CreateVacancys> {
         permissionLabel: 'galeria',
         usageReason: 'para adicionar vídeos à vaga',
       );
-
       if (!wantsToRetry) return;
-
       result = await PermissionUtil.checkAndRequest(isCamera: false);
     }
 
-    // 3️⃣ Ainda sem permissão
     if (result != PermissionResult.granted) {
       await PermissionUtil.showPermissionDialog(
         context: context,
@@ -235,13 +215,11 @@ class _CreateVacancysState extends State<CreateVacancys> {
       return;
     }
 
-    // 4️⃣ Permissão concedida → abre picker
     try {
-      final XFile? video = await _picker.pickVideo(source: ImageSource.gallery);
+      final XFile? video =
+          await _picker.pickVideo(source: ImageSource.gallery);
       if (video != null) {
-        setState(() {
-          _selectedVideos.add(File(video.path));
-        });
+        setState(() => _selectedVideos.add(File(video.path)));
       }
     } catch (e) {
       debugPrint('Erro ao selecionar vídeo: $e');
@@ -249,17 +227,10 @@ class _CreateVacancysState extends State<CreateVacancys> {
     }
   }
 
-  void _removeImage(int index) {
-    setState(() {
-      _selectedImages.removeAt(index);
-    });
-  }
-
-  void _removeVideo(int index) {
-    setState(() {
-      _selectedVideos.removeAt(index);
-    });
-  }
+  void _removeImage(int index) =>
+      setState(() => _selectedImages.removeAt(index));
+  void _removeVideo(int index) =>
+      setState(() => _selectedVideos.removeAt(index));
 
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -267,14 +238,17 @@ class _CreateVacancysState extends State<CreateVacancys> {
         content: Text(message),
         backgroundColor: color,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
 
+  static const int _descMinLength = 80;
+
   bool _validateFields() {
+    // 1. Profissão, estado e cidade obrigatórios
     if (selectedProfession == null ||
-        _descriptionController.text.trim().isEmpty ||
         selectedState == null ||
         selectedCity == null) {
       _showSnackBar(
@@ -283,6 +257,30 @@ class _CreateVacancysState extends State<CreateVacancys> {
       );
       return false;
     }
+
+    // 2. Tipo de contrato/salário obrigatório
+    if (selectedSalaryType == null) {
+      _showSnackBar(
+        'Selecione o tipo de contrato antes de criar a vaga',
+        Colors.orange,
+      );
+      return false;
+    }
+
+    // 3. Descrição obrigatória e mínimo de 80 caracteres
+    final descLength = _descriptionController.text.trim().length;
+    if (descLength == 0) {
+      _showSnackBar('A descrição é obrigatória', Colors.orange);
+      return false;
+    }
+    if (descLength < _descMinLength) {
+      _showSnackBar(
+        'A descrição deve ter pelo menos $_descMinLength caracteres (${descLength}/$_descMinLength)',
+        Colors.orange,
+      );
+      return false;
+    }
+
     return true;
   }
 
@@ -296,45 +294,22 @@ class _CreateVacancysState extends State<CreateVacancys> {
     });
 
     try {
-      List<String> mediaUrls = await _uploadAllMedia();
-
-      List<String> imageUrls = [];
-      List<String> videoUrls = [];
-
-      for (String url in mediaUrls) {
-        if (url.contains('/vacancies/')) {
-          if (url.contains('.jpg') ||
-              url.contains('.jpeg') ||
-              url.contains('.png') ||
-              url.contains('.webp')) {
-            imageUrls.add(url);
-          } else if (url.contains('.mp4') ||
-              url.contains('.mov') ||
-              url.contains('.avi')) {
-            videoUrls.add(url);
-          }
-        }
-      }
+      final (:imageUrls, :videoUrls) = await _uploadAllMedia();
 
       String finalSalary = 'A combinar';
-      if (selectedSalaryType != null) {
-        if (selectedSalaryType == 'A combinar') {
-          finalSalary = 'A combinar';
-        } else if (_salaryController.text.trim().isNotEmpty) {
-          finalSalary = '${_salaryController.text.trim()}';
-        } else {
-          finalSalary = selectedSalaryType!;
-        }
+      if (selectedSalaryType != null && selectedSalaryType != 'A combinar') {
+        final salaryText = _salaryController.text.trim();
+        finalSalary =
+            salaryText.isNotEmpty ? salaryText : selectedSalaryType!;
       }
 
-      setState(() {
-        _uploadStatus = 'Salvando vaga...';
-      });
+      setState(() => _uploadStatus = 'Salvando vaga...');
 
-      Map<String, dynamic> vacancyData = {
-        'title': _titleController.text.trim().isEmpty
-            ? null
-            : _titleController.text.trim(),
+      final now = DateTime.now().toIso8601String();
+      final titleText = _titleController.text.trim();
+
+      final Map<String, dynamic> vacancyData = {
+        'title': titleText.isNotEmpty ? titleText : selectedProfession!,
         'profession': selectedProfession,
         'state': selectedState,
         'city': selectedCity,
@@ -343,46 +318,39 @@ class _CreateVacancysState extends State<CreateVacancys> {
         'description': _descriptionController.text.trim(),
         'requests': [],
         'salary': finalSalary,
-        'salary_type': selectedSalaryType,
+        'salary_type': selectedSalaryType ?? 'A combinar',
         'local_id': widget.localId,
         'midia': {
-          'images': imageUrls.isEmpty ? [] : imageUrls,
-          'videos': videoUrls.isEmpty ? [] : videoUrls,
+          'images': imageUrls,
+          'videos': videoUrls,
         },
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': now,
+        'updated_at': now,
         'status': 'Aberta',
         'views': {
-          'owner_last_viewed': null,
           'request_views': {},
         },
         'stats': {
           'total_views': 0,
-          'unique_viewers': [],
+          'total_applications': 0,
           'created_timestamp': DateTime.now().millisecondsSinceEpoch,
         },
       };
 
       final vacancyId = await _vacancyService.createVacancy(vacancyData);
 
-      setState(() {
-        _isUploading = false;
-      });
+      setState(() => _isUploading = false);
 
       if (vacancyId != null) {
         _showSnackBar('Vaga criada com sucesso!', Colors.green);
-        await Future.delayed(Duration(seconds: 1));
-
-        if (mounted) {
-          Navigator.pop(context, true);
-        }
+        await Future.delayed(const Duration(milliseconds: 800));
+        if (mounted) Navigator.pop(context, vacancyId);
       } else {
         _showSnackBar('Erro ao criar vaga', Colors.red);
       }
     } catch (e) {
       debugPrint('Erro ao salvar vaga: $e');
-      setState(() {
-        _isUploading = false;
-      });
+      setState(() => _isUploading = false);
       _showSnackBar('Erro ao salvar vaga. Tente novamente.', Colors.red);
     }
   }
@@ -439,16 +407,14 @@ class _CreateVacancysState extends State<CreateVacancys> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildSectionTitle('Informações Básicas', Icons.assignment, true),
+                  _buildSectionTitle(
+                      'Informações Básicas', Icons.assignment, true),
                   SizedBox(height: 16),
 
                   ProfessionDropdown(
                     initialValue: selectedProfession,
-                    onChanged: (value) {
-                      setState(() {
-                        selectedProfession = value;
-                      });
-                    },
+                    onChanged: (value) =>
+                        setState(() => selectedProfession = value),
                   ),
                   SizedBox(height: 16),
 
@@ -461,49 +427,39 @@ class _CreateVacancysState extends State<CreateVacancys> {
                   ),
                   SizedBox(height: 16),
 
-                  _buildTextField(
-                    controller: _descriptionController,
-                    focusNode: _descriptionFocus,
-                    label: 'Descrição',
-                    hint: 'Descreva os requisitos e responsabilidades...',
-                    icon: Icons.description,
-                    maxLines: 5,
-                  ),
+                  _buildDescriptionField(),
                   SizedBox(height: 16),
 
                   StateDropdown(
                     initialValue: selectedState,
-                    onChanged: (value) {
-                      setState(() {
-                        selectedState = value;
-                        selectedCity = null;
-                      });
-                    },
+                    onChanged: (value) => setState(() {
+                      selectedState = value;
+                      selectedCity = null;
+                    }),
                   ),
                   SizedBox(height: 16),
 
                   CityDropdown(
                     selectedState: selectedState,
                     initialValue: selectedCity,
-                    onChanged: (value) {
-                      setState(() {
-                        selectedCity = value;
-                      });
-                    },
+                    onChanged: (value) =>
+                        setState(() => selectedCity = value),
                   ),
                   SizedBox(height: 16),
 
                   _buildSalaryTypeDropdown(),
                   SizedBox(height: 16),
 
-                  if (selectedSalaryType != null && selectedSalaryType != 'A combinar')
+                  if (selectedSalaryType != null &&
+                      selectedSalaryType != 'A combinar') ...[
                     _buildSalaryField(),
-                  if (selectedSalaryType != null && selectedSalaryType != 'A combinar')
                     SizedBox(height: 16),
+                  ],
 
                   SizedBox(height: 16),
 
-                  _buildSectionTitle('Mídia (Opcional)', Icons.photo_library, false),
+                  _buildSectionTitle(
+                      'Mídia (Opcional)', Icons.photo_library, false),
                   SizedBox(height: 16),
                   _buildMediaUploadSection(),
                   SizedBox(height: 16),
@@ -544,8 +500,11 @@ class _CreateVacancysState extends State<CreateVacancys> {
                       child: Text(
                         _isUploading
                             ? 'Salvando...'
-                            : (widget.isEditing ? 'Salvar Alterações' : 'Criar Vaga'),
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            : (widget.isEditing
+                                ? 'Salvar Alterações'
+                                : 'Criar Vaga'),
+                        style: TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
@@ -567,8 +526,11 @@ class _CreateVacancysState extends State<CreateVacancys> {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           CircularProgressIndicator(
-                            value: _uploadProgress > 0 ? _uploadProgress : null,
-                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF6B35)),
+                            value: _uploadProgress > 0
+                                ? _uploadProgress
+                                : null,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFFFF6B35)),
                             strokeWidth: 3,
                           ),
                           SizedBox(height: 16),
@@ -581,7 +543,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
                             SizedBox(height: 8),
                             Text(
                               '${(_uploadProgress * 100).toStringAsFixed(0)}%',
-                              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                              style: TextStyle(
+                                  fontSize: 14, color: Colors.grey[600]),
                             ),
                           ],
                         ],
@@ -597,16 +560,23 @@ class _CreateVacancysState extends State<CreateVacancys> {
   }
 
   Widget _buildSalaryTypeDropdown() {
+    final bool isSelected = selectedSalaryType != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Tipo de Salário (Opcional)',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF374151),
-          ),
+        Row(
+          children: [
+            Text(
+              'Tipo de Contrato',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF374151),
+              ),
+            ),
+            SizedBox(width: 6),
+            Text('*', style: TextStyle(color: Colors.red, fontSize: 18)),
+          ],
         ),
         SizedBox(height: 8),
         InkWell(
@@ -621,18 +591,29 @@ class _CreateVacancysState extends State<CreateVacancys> {
             padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Color(0xFFD1D5DB), width: 1),
-              color: Color(0xFFF9FAFB),
+              border: Border.all(
+                color: isSelected
+                    ? Color(0xFF3B82F6)
+                    : Color(0xFFD1D5DB),
+                width: isSelected ? 1.5 : 1,
+              ),
+              color: isSelected
+                  ? Color(0xFFEFF6FF)
+                  : Color(0xFFF9FAFB),
             ),
             child: Row(
               children: [
-                Icon(Icons.schedule, color: Colors.grey[400], size: 22),
+                Icon(Icons.schedule,
+                    color: isSelected
+                        ? Color(0xFF3B82F6)
+                        : Colors.grey[400],
+                    size: 22),
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    selectedSalaryType ?? 'Selecione o tipo de salário',
+                    selectedSalaryType ?? 'Selecione o tipo de contrato *',
                     style: TextStyle(
-                      color: selectedSalaryType != null
+                      color: isSelected
                           ? Color(0xFF1F2937)
                           : Colors.grey[400],
                       fontSize: 16,
@@ -644,21 +625,28 @@ class _CreateVacancysState extends State<CreateVacancys> {
             ),
           ),
         ),
+        if (!isSelected) ...[
+          SizedBox(height: 5),
+          Text(
+            'Obrigatório para publicar a vaga',
+            style: TextStyle(fontSize: 11, color: Colors.red[400]),
+          ),
+        ],
       ],
     );
   }
 
   void _showSalaryTypeDialog() async {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      FocusScope.of(context).unfocus();
-    });
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) async => FocusScope.of(context).unfocus());
 
     await showDialog(
       context: context,
       barrierDismissible: true,
       builder: (BuildContext dialogContext) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           child: Container(
             constraints: BoxConstraints(maxHeight: 500),
             child: Column(
@@ -678,7 +666,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
                       Icon(Icons.schedule, color: Colors.white),
                       SizedBox(width: 12),
                       Text(
-                        'Tipo de Salário',
+                        'Tipo de Contrato',
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 18,
@@ -695,41 +683,43 @@ class _CreateVacancysState extends State<CreateVacancys> {
                     itemBuilder: (context, index) {
                       final type = salaryTypes[index];
                       final isSelected = type == selectedSalaryType;
-
                       return InkWell(
                         onTap: () {
                           setState(() {
                             selectedSalaryType = type;
-                            if (type == 'A combinar') {
+                            if (type == 'A combinar')
                               _salaryController.clear();
-                            }
                           });
                           Navigator.pop(dialogContext);
                         },
                         child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 16),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? Color(0xFF3B82F6).withOpacity(0.1)
                                 : Colors.transparent,
                             border: Border(
-                              bottom: BorderSide(color: Colors.grey[200]!, width: 1),
+                              bottom: BorderSide(
+                                  color: Colors.grey[200]!, width: 1),
                             ),
                           ),
                           child: Row(
                             children: [
-                              Icon(
-                                Icons.attach_money,
-                                color: isSelected ? Color(0xFF3B82F6) : Colors.grey[600],
-                                size: 22,
-                              ),
+                              Icon(Icons.attach_money,
+                                  color: isSelected
+                                      ? Color(0xFF3B82F6)
+                                      : Colors.grey[600],
+                                  size: 22),
                               SizedBox(width: 16),
                               Expanded(
                                 child: Text(
                                   type,
                                   style: TextStyle(
                                     fontSize: 16,
-                                    color: isSelected ? Color(0xFF3B82F6) : Colors.black87,
+                                    color: isSelected
+                                        ? Color(0xFF3B82F6)
+                                        : Colors.black87,
                                     fontWeight: isSelected
                                         ? FontWeight.w600
                                         : FontWeight.normal,
@@ -737,7 +727,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
                                 ),
                               ),
                               if (isSelected)
-                                Icon(Icons.check_circle, color: Color(0xFF3B82F6), size: 22),
+                                Icon(Icons.check_circle,
+                                    color: Color(0xFF3B82F6), size: 22),
                             ],
                           ),
                         ),
@@ -752,9 +743,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
       },
     );
 
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      FocusScope.of(context).unfocus();
-    });
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) async => FocusScope.of(context).unfocus());
   }
 
   Widget _buildSalaryField() {
@@ -787,7 +777,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
             decoration: InputDecoration(
               hintText: 'R\$ 0,00',
               hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: Icon(Icons.attach_money, color: Color(0xFFFF6B35), size: 20),
+              prefixIcon: Icon(Icons.attach_money,
+                  color: Color(0xFFFF6B35), size: 20),
               border: InputBorder.none,
               contentPadding: EdgeInsets.all(16),
             ),
@@ -851,7 +842,8 @@ class _CreateVacancysState extends State<CreateVacancys> {
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: Icon(icon, color: Color(0xFFFF6B35), size: 20),
+              prefixIcon:
+                  Icon(icon, color: Color(0xFFFF6B35), size: 20),
               border: InputBorder.none,
               contentPadding: EdgeInsets.all(16),
             ),
@@ -861,9 +853,103 @@ class _CreateVacancysState extends State<CreateVacancys> {
     );
   }
 
+  Widget _buildDescriptionField() {
+    final int length = _descriptionController.text.trim().length;
+    final bool tooShort = length > 0 && length < _descMinLength;
+    final Color borderColor = tooShort
+        ? Colors.orange
+        : length >= _descMinLength
+            ? Colors.green.shade400
+            : Colors.grey[300]!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Descrição',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[700],
+              ),
+            ),
+            SizedBox(width: 6),
+            Text('*', style: TextStyle(color: Colors.red, fontSize: 18)),
+          ],
+        ),
+        SizedBox(height: 4),
+        Text(
+          'Descreva com detalhes os requisitos, responsabilidades e condições da vaga',
+          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+        ),
+        SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor, width: 1.5),
+          ),
+          child: TextField(
+            controller: _descriptionController,
+            focusNode: _descriptionFocus,
+            maxLines: 5,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText:
+                  'Descreva os requisitos, responsabilidades, condições de trabalho e diferenciais da vaga...',
+              hintStyle: TextStyle(color: Colors.grey[400]),
+              prefixIcon:
+                  Icon(Icons.description, color: Color(0xFFFF6B35), size: 20),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.all(16),
+            ),
+          ),
+        ),
+        SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            if (tooShort)
+              Text(
+                'Mínimo de $_descMinLength caracteres',
+                style: TextStyle(fontSize: 11, color: Colors.orange[700]),
+              )
+            else if (length >= _descMinLength)
+              Row(children: [
+                Icon(Icons.check_circle_outline,
+                    size: 13, color: Colors.green.shade600),
+                SizedBox(width: 4),
+                Text('Ok',
+                    style: TextStyle(
+                        fontSize: 11, color: Colors.green.shade600)),
+              ])
+            else
+              Text(
+                'Mínimo $_descMinLength caracteres',
+                style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+              ),
+            Text(
+              '$length/$_descMinLength',
+              style: TextStyle(
+                fontSize: 11,
+                color: tooShort
+                    ? Colors.orange[700]
+                    : length >= _descMinLength
+                        ? Colors.green.shade600
+                        : Colors.grey[500],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Widget _buildMediaUploadSection() {
     final bool canAddMoreImages = _selectedImages.length < 3;
-
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -916,7 +1002,6 @@ class _CreateVacancysState extends State<CreateVacancys> {
       decoration: BoxDecoration(
         border: Border.all(
           color: enabled ? Colors.grey[300]! : Colors.grey[200]!,
-          style: BorderStyle.solid,
         ),
         borderRadius: BorderRadius.circular(10),
         color: enabled ? Colors.transparent : Colors.grey[100],
@@ -931,13 +1016,18 @@ class _CreateVacancysState extends State<CreateVacancys> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, color: enabled ? Color(0xFFFF6B35) : Colors.grey[400], size: 22),
+                Icon(icon,
+                    color:
+                        enabled ? Color(0xFFFF6B35) : Colors.grey[400],
+                    size: 22),
                 SizedBox(width: 10),
                 Flexible(
                   child: Text(
                     label,
                     style: TextStyle(
-                      color: enabled ? Colors.grey[700] : Colors.grey[400],
+                      color: enabled
+                          ? Colors.grey[700]
+                          : Colors.grey[400],
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -962,12 +1052,14 @@ class _CreateVacancysState extends State<CreateVacancys> {
       children: [
         Row(
           children: [
-            Icon(isVideo ? Icons.videocam : Icons.photo, color: Color(0xFFFF6B35), size: 18),
+            Icon(isVideo ? Icons.videocam : Icons.photo,
+                color: Color(0xFFFF6B35), size: 18),
             SizedBox(width: 8),
-            Text(
-              title,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-            ),
+            Text(title,
+                style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87)),
             SizedBox(width: 8),
             Container(
               padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -975,15 +1067,16 @@ class _CreateVacancysState extends State<CreateVacancys> {
                 color: Color(0xFFFF6B35),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text(
-                '${items.length}',
-                style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-              ),
+              child: Text('${items.length}',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold)),
             ),
           ],
         ),
         SizedBox(height: 12),
-        Container(
+        SizedBox(
           height: 120,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
@@ -994,13 +1087,9 @@ class _CreateVacancysState extends State<CreateVacancys> {
                 child: Stack(
                   children: [
                     GestureDetector(
-                      onTap: () {
-                        if (isVideo) {
-                          _viewVideoFullscreen(items[index], index);
-                        } else {
-                          _viewImageFullscreen(items[index], index);
-                        }
-                      },
+                      onTap: () => isVideo
+                          ? _viewVideoFullscreen(items[index], index)
+                          : _viewImageFullscreen(items[index], index),
                       child: Container(
                         width: 120,
                         height: 120,
@@ -1016,12 +1105,13 @@ class _CreateVacancysState extends State<CreateVacancys> {
                                   alignment: Alignment.center,
                                   children: [
                                     Container(
-                                      color: Colors.black,
-                                      child: Center(
-                                        child: Icon(Icons.videocam, size: 40, color: Colors.white70),
-                                      ),
-                                    ),
-                                    Icon(Icons.play_circle_fill, size: 50, color: Colors.white),
+                                        color: Colors.black,
+                                        child: Center(
+                                            child: Icon(Icons.videocam,
+                                                size: 40,
+                                                color: Colors.white70))),
+                                    Icon(Icons.play_circle_fill,
+                                        size: 50, color: Colors.white),
                                   ],
                                 )
                               : Image.file(items[index], fit: BoxFit.cover),
@@ -1032,13 +1122,15 @@ class _CreateVacancysState extends State<CreateVacancys> {
                       top: 4,
                       right: 4,
                       child: GestureDetector(
-                        onTap: () {
-                          isVideo ? _removeVideo(index) : _removeImage(index);
-                        },
+                        onTap: () => isVideo
+                            ? _removeVideo(index)
+                            : _removeImage(index),
                         child: Container(
                           padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-                          child: Icon(Icons.close, color: Colors.white, size: 16),
+                          decoration: BoxDecoration(
+                              color: Colors.red, shape: BoxShape.circle),
+                          child: Icon(Icons.close,
+                              color: Colors.white, size: 16),
                         ),
                       ),
                     ),

@@ -5,682 +5,201 @@ import 'package:firebase_database/firebase_database.dart';
 class SearchUserToComplaint extends StatefulWidget {
   final String UserEmailContact;
   final String Company;
-  
-  const SearchUserToComplaint({Key? key, required this.UserEmailContact, required this.Company})
-    : super(key: key);
+
+  const SearchUserToComplaint({
+    Key? key,
+    required this.UserEmailContact,
+    required this.Company,
+  }) : super(key: key);
 
   @override
   State<SearchUserToComplaint> createState() => _SearchUserToComplaintState();
 }
 
-class _SearchUserToComplaintState extends State<SearchUserToComplaint> {
+class _SearchUserToComplaintState extends State<SearchUserToComplaint>
+    with SingleTickerProviderStateMixin {
+  // ── Controllers ───────────────────────────────────────────────────────────
   final _searchController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
+  final _formKey          = GlobalKey<FormState>();
+  late final AnimationController _resultCtrl;
+  late final Animation<double>   _resultFade;
 
-  bool _isLoading = false;
-  Map<String, dynamic>? _foundUser;
-  String? _foundUserId;
-  String _searchType = 'email'; // 'email' ou 'company'
-  bool _isSelfReport = false; // Nova flag para auto-denúncia
+  // ── State ─────────────────────────────────────────────────────────────────
+  bool                   _isLoading    = false;
+  Map<String, dynamic>?  _foundUser;
+  String?                _foundUserId;
+  String                 _searchType   = 'email';
+  bool                   _isSelfReport = false;
+
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  static const _accent = Color(0xFFDC2626);
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  @override
+  void initState() {
+    super.initState();
+    _resultCtrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 320));
+    _resultFade = CurvedAnimation(parent: _resultCtrl, curve: Curves.easeOut);
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _resultCtrl.dispose();
     super.dispose();
   }
 
+  // ── Logic ─────────────────────────────────────────────────────────────────
   bool _checkIfSelfReport(Map<String, dynamic> userData) {
-    // Verificar se o email de contato é o mesmo
-    final foundEmailContact = (userData['email_contact'] ?? '').toString().toLowerCase();
-    final foundEmail = (userData['email'] ?? '').toString().toLowerCase();
+    final foundEmailContact =
+        (userData['email_contact'] ?? '').toString().toLowerCase();
+    final foundEmail  = (userData['email'] ?? '').toString().toLowerCase();
     final currentEmail = widget.UserEmailContact.toLowerCase();
 
     if (foundEmailContact == currentEmail || foundEmail == currentEmail) {
       return true;
     }
 
-    // Verificar se a empresa é a mesma
-    final contractorCompany = (userData['data_contractor']?['company'] ?? '').toString().toLowerCase();
-    final workerCompany = (userData['data_worker']?['company'] ?? '').toString().toLowerCase();
+    final contractorCompany =
+        (userData['data_contractor']?['company'] ?? '').toString().toLowerCase();
+    final workerCompany =
+        (userData['data_worker']?['company'] ?? '').toString().toLowerCase();
     final currentCompany = widget.Company.toLowerCase();
 
-    if ((contractorCompany.isNotEmpty && contractorCompany == currentCompany) ||
-        (workerCompany.isNotEmpty && workerCompany == currentCompany)) {
-      return true;
-    }
-
-    return false;
+    return (contractorCompany.isNotEmpty && contractorCompany == currentCompany) ||
+        (workerCompany.isNotEmpty && workerCompany == currentCompany);
   }
 
   Future<void> _searchUser() async {
     if (!_formKey.currentState!.validate()) return;
+    FocusScope.of(context).unfocus();
 
+    _resultCtrl.reverse();
     setState(() {
-      _isLoading = true;
-      _foundUser = null;
-      _foundUserId = null;
+      _isLoading    = true;
+      _foundUser    = null;
+      _foundUserId  = null;
       _isSelfReport = false;
     });
 
     try {
-      final DatabaseReference usersRef = FirebaseDatabase.instance.ref('Users');
-      final snapshot = await usersRef.get();
+      final snapshot = await FirebaseDatabase.instance.ref('Users').get();
 
       if (snapshot.exists) {
-        final usersData = Map<String, dynamic>.from(snapshot.value as Map);
-
+        final usersData =
+            Map<String, dynamic>.from(snapshot.value as Map);
         final searchValue = _searchController.text.trim().toLowerCase();
 
-        // Buscar usuário
-        for (var entry in usersData.entries) {
-          final userId = entry.key;
+        for (final entry in usersData.entries) {
+          final userId   = entry.key;
           final userData = Map<String, dynamic>.from(entry.value as Map);
 
           bool found = false;
-
           if (_searchType == 'email') {
-            final emailContact = (userData['email_contact'] ?? '')
-                .toString()
-                .toLowerCase();
-            final email = (userData['email'] ?? '').toString().toLowerCase();
+            final emailContact =
+                (userData['email_contact'] ?? '').toString().toLowerCase();
+            final email =
+                (userData['email'] ?? '').toString().toLowerCase();
             found = emailContact == searchValue || email == searchValue;
           } else {
-            // Buscar por empresa (contractor ou worker)
             final contractorCompany =
                 (userData['data_contractor']?['company'] ?? '')
                     .toString()
                     .toLowerCase();
-            final workerCompany = (userData['data_worker']?['company'] ?? '')
-                .toString()
-                .toLowerCase();
-            found =
-                contractorCompany.contains(searchValue) ||
+            final workerCompany =
+                (userData['data_worker']?['company'] ?? '')
+                    .toString()
+                    .toLowerCase();
+            found = contractorCompany.contains(searchValue) ||
                 workerCompany.contains(searchValue);
           }
 
           if (found) {
-            // Verificar se é auto-denúncia
-            final isSelf = _checkIfSelfReport(userData);
-            
             setState(() {
-              _foundUser = userData;
-              _foundUserId = userId;
-              _isSelfReport = isSelf;
+              _foundUser    = userData;
+              _foundUserId  = userId;
+              _isSelfReport = _checkIfSelfReport(userData);
             });
+            _resultCtrl.forward();
             break;
           }
         }
 
-        if (_foundUser == null) {
-          _showError('Usuário não encontrado');
-        }
+        if (_foundUser == null) _toast('Usuário não encontrado');
       } else {
-        _showError('Nenhum usuário encontrado no banco de dados');
+        _toast('Nenhum usuário encontrado no banco de dados');
       }
     } catch (e) {
-      _showError('Erro ao buscar usuário: $e');
+      _toast('Erro ao buscar usuário: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  void _clearResult() {
+    _resultCtrl.reverse().then((_) {
+      setState(() {
+        _foundUser    = null;
+        _foundUserId  = null;
+        _isSelfReport = false;
+        _searchController.clear();
+      });
+    });
   }
 
   void _confirmAndProceed() {
     if (_foundUser == null || _foundUserId == null || _isSelfReport) return;
-
-    // Navegar para a tela de denúncia passando os dados do usuário
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ComplaintUser(
-          reportedId: _foundUserId!,
-          reportedName: _foundUser!['Name'] ?? 'Não definido',
+        builder: (_) => ComplaintUser(
+          reportedId:    _foundUserId!,
+          reportedName:  _foundUser!['Name'] ?? 'Não definido',
           reportedEmail: _foundUser!['email_contact'] ?? 'Não definido',
         ),
       ),
     );
   }
 
+  void _toast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w500)),
+      backgroundColor: const Color(0xFF1C1C1E),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        elevation: 0,
-        title: const Text(
-          'Buscar Usuário',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 20),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.red.shade600,
-        foregroundColor: Colors.white,
-      ),
+      backgroundColor: const Color(0xFFF8F8F8),
+      appBar: _buildAppBar(),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
+        padding: EdgeInsets.fromLTRB(
+            16, 20, 16, MediaQuery.of(context).padding.bottom + 24),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.red.shade600, Colors.red.shade800],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.red.shade200,
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.person_search_rounded,
-                        size: 48,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      'Denunciar Usuário',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Busque o usuário que deseja denunciar',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              _buildSearchTypeToggle(),
+              const SizedBox(height: 16),
+              _buildSearchField(),
+              const SizedBox(height: 12),
+              _buildSearchButton(),
               const SizedBox(height: 24),
-
-              // Tipo de busca
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+              if (_foundUser != null)
+                FadeTransition(
+                  opacity: _resultFade,
+                  child: _isSelfReport
+                      ? _buildSelfReportCard()
+                      : _buildFoundUserCard(),
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Buscar por:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildSearchTypeButton(
-                            'Email',
-                            'email',
-                            Icons.email_outlined,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildSearchTypeButton(
-                            'Empresa',
-                            'company',
-                            Icons.business_outlined,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Campo de busca
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: TextFormField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.red.shade400,
-                        width: 2,
-                      ),
-                    ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    hintText: _searchType == 'email'
-                        ? 'Digite o email do usuário'
-                        : 'Digite o nome da empresa',
-                    hintStyle: TextStyle(color: Colors.grey.shade400),
-                    prefixIcon: Icon(
-                      _searchType == 'email' ? Icons.email : Icons.business,
-                      color: Colors.red.shade400,
-                    ),
-                    contentPadding: const EdgeInsets.all(16),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Por favor, digite um valor para buscar';
-                    }
-                    if (_searchType == 'email' && !value.contains('@')) {
-                      return 'Digite um email válido';
-                    }
-                    return null;
-                  },
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Botão de buscar
-              Container(
-                height: 56,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.red.shade600, Colors.red.shade800],
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.red.shade300,
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _searchUser,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    foregroundColor: Colors.white,
-                    shadowColor: Colors.transparent,
-                    disabledBackgroundColor: Colors.grey,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Icon(Icons.search_rounded, size: 20),
-                            SizedBox(width: 8),
-                            Text(
-                              'Buscar Usuário',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ],
-                        ),
-                ),
-              ),
-
-              // Resultado da busca - Mensagem de auto-denúncia
-              if (_foundUser != null && _isSelfReport) ...[
-                const SizedBox(height: 32),
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.orange.shade300, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 15,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          Icons.block_rounded,
-                          size: 48,
-                          color: Colors.orange.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Text(
-                        'Não Permitido',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange.shade800,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Você não pode denunciar a si mesmo',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey.shade700,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'O usuário encontrado possui o mesmo email ou empresa que você',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _foundUser = null;
-                              _foundUserId = null;
-                              _isSelfReport = false;
-                              _searchController.clear();
-                            });
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange.shade600,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            elevation: 2,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: const Text(
-                            'Fazer Nova Busca',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-
-              // Resultado da busca - Usuário válido
-              if (_foundUser != null && !_isSelfReport) ...[
-                const SizedBox(height: 32),
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.red.shade200, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 15,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.check_circle,
-                            color: Colors.green.shade600,
-                            size: 24,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'Usuário Encontrado',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Avatar e Nome
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 35,
-                            backgroundImage: NetworkImage(
-                              _foundUser!['avatar'] ??
-                                  'https://res.cloudinary.com/dsmgwupky/image/upload/v1731970845/image_3_uiwlog.png',
-                            ),
-                            backgroundColor: Colors.grey.shade200,
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _foundUser!['Name'] ?? 'Não definido',
-                                  style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _foundUser!['email_contact'] ??
-                                      'Não definido',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 20),
-                      const Divider(),
-                      const SizedBox(height: 16),
-
-                      // Informações adicionais
-                      _buildInfoRow(
-                        Icons.location_city,
-                        'Cidade',
-                        '${_foundUser!['city'] ?? 'Não definido'}, ${_foundUser!['state'] ?? ''}',
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoRow(
-                        Icons.work_outline,
-                        'Empresa',
-                        _foundUser!['activeMode'] == 'contractor'
-                            ? (_foundUser!['data_contractor']?['company'] ??
-                                  'Não definido')
-                            : (_foundUser!['data_worker']?['company'] ??
-                                  'Não definido'),
-                      ),
-                      const SizedBox(height: 12),
-                      _buildInfoRow(
-                        Icons.badge_outlined,
-                        'Profissão',
-                        _foundUser!['activeMode'] == 'contractor'
-                            ? (_foundUser!['data_contractor']?['profession'] ??
-                                  'Não definido')
-                            : (_foundUser!['data_worker']?['profession'] ??
-                                  'Não definido'),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      // Pergunta de confirmação
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.amber.shade200),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.help_outline,
-                              color: Colors.amber.shade800,
-                            ),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Text(
-                                'Este é o usuário que deseja denunciar?',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Botões de confirmação
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () {
-                                setState(() {
-                                  _foundUser = null;
-                                  _foundUserId = null;
-                                  _isSelfReport = false;
-                                  _searchController.clear();
-                                });
-                              },
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                side: BorderSide(color: Colors.grey.shade400),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                              child: const Text(
-                                'Não',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: _confirmAndProceed,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red.shade600,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 14,
-                                ),
-                                elevation: 2,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                              ),
-                              child: const Text(
-                                'Sim, continuar',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -688,43 +207,123 @@ class _SearchUserToComplaintState extends State<SearchUserToComplaint> {
     );
   }
 
-  Widget _buildSearchTypeButton(String label, String type, IconData icon) {
-    final isSelected = _searchType == type;
-    return InkWell(
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      leading: IconButton(
+        icon: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: const Icon(Icons.arrow_back_ios_new_rounded,
+              size: 16, color: Color(0xFF1C1C1E)),
+        ),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: const Text(
+        'Denunciar Usuário',
+        style: TextStyle(
+          fontSize: 17,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF1C1C1E),
+          letterSpacing: -0.3,
+        ),
+      ),
+      centerTitle: true,
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Container(height: 1, color: Colors.grey.shade100),
+      ),
+    );
+  }
+
+  // ── Search type toggle ─────────────────────────────────────────────────────
+  Widget _buildSearchTypeToggle() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Buscar por',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1C1C1E),
+              letterSpacing: 0.1,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: _buildTypeChip('Email',   'email',   Icons.email_outlined)),
+              const SizedBox(width: 10),
+              Expanded(child: _buildTypeChip('Empresa', 'company', Icons.business_outlined)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeChip(String label, String type, IconData icon) {
+    final selected = _searchType == type;
+    return GestureDetector(
       onTap: () {
+        if (_searchType == type) return;
         setState(() {
           _searchType = type;
           _searchController.clear();
-          _foundUser = null;
-          _foundUserId = null;
+          _foundUser    = null;
+          _foundUserId  = null;
           _isSelfReport = false;
         });
+        _resultCtrl.reset();
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 11),
         decoration: BoxDecoration(
-          color: isSelected ? Colors.red.shade600 : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(10),
+          color: selected ? _accent : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? Colors.red.shade600 : Colors.grey.shade300,
-            width: 2,
+            color: selected ? _accent : Colors.grey.shade200,
+            width: selected ? 1.5 : 1,
           ),
+          boxShadow: selected
+              ? [BoxShadow(
+                  color: _accent.withOpacity(0.25),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3))]
+              : [],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: 18,
-              color: isSelected ? Colors.white : Colors.grey.shade700,
-            ),
+            Icon(icon, size: 16,
+                color: selected ? Colors.white : Colors.grey.shade500),
             const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: isSelected ? Colors.white : Colors.grey.shade700,
+                color: selected ? Colors.white : Colors.grey.shade600,
               ),
             ),
           ],
@@ -733,30 +332,438 @@ class _SearchUserToComplaintState extends State<SearchUserToComplaint> {
     );
   }
 
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: Colors.grey.shade600),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.w500,
+  // ── Search field ───────────────────────────────────────────────────────────
+  Widget _buildSearchField() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: TextFormField(
+        controller: _searchController,
+        keyboardType: _searchType == 'email'
+            ? TextInputType.emailAddress
+            : TextInputType.text,
+        style: const TextStyle(
+            fontSize: 14, color: Color(0xFF1C1C1E), height: 1.4),
+        decoration: InputDecoration(
+          hintText: _searchType == 'email'
+              ? 'Digite o e-mail do usuário'
+              : 'Digite o nome da empresa',
+          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+          prefixIcon: Icon(
+            _searchType == 'email' ? Icons.email_outlined : Icons.business_outlined,
+            size: 20,
+            color: Colors.grey.shade400,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide:
+                BorderSide(color: _accent.withOpacity(0.4), width: 1.5),
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+        validator: (value) {
+          if (value == null || value.trim().isEmpty) {
+            return _searchType == 'email'
+                ? 'Digite um e-mail para buscar'
+                : 'Digite uma empresa para buscar';
+          }
+          if (_searchType == 'email' && !value.contains('@')) {
+            return 'Digite um e-mail válido';
+          }
+          return null;
+        },
+      ),
+    );
+  }
+
+  // ── Search button ──────────────────────────────────────────────────────────
+  Widget _buildSearchButton() {
+    return GestureDetector(
+      onTap: _isLoading ? null : _searchUser,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 52,
+        decoration: BoxDecoration(
+          color: _accent,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+                color: _accent.withOpacity(0.3),
+                blurRadius: 12,
+                offset: const Offset(0, 4))
+          ],
+        ),
+        child: Center(
+          child: _isLoading
+              ? const SizedBox(
+                  width: 22, height: 22,
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2.5),
+                )
+              : const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.search_rounded, color: Colors.white, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      'Buscar Usuário',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+
+  // ── Found user card ────────────────────────────────────────────────────────
+  Widget _buildFoundUserCard() {
+    final name    = _foundUser!['Name'] ?? 'Não definido';
+    final email   = _foundUser!['email_contact'] ?? 'Não definido';
+    final avatar  = _foundUser!['avatar'] ??
+        'https://res.cloudinary.com/dsmgwupky/image/upload/v1731970845/image_3_uiwlog.png';
+    final city    = _foundUser!['city'] ?? 'Não definido';
+    final state   = _foundUser!['state'] ?? '';
+    final mode    = _foundUser!['activeMode'];
+    final company = mode == 'contractor'
+        ? (_foundUser!['data_contractor']?['company'] ?? 'Não definido')
+        : (_foundUser!['data_worker']?['company'] ?? 'Não definido');
+    final profession = mode == 'contractor'
+        ? (_foundUser!['data_contractor']?['profession'] ?? 'Não definido')
+        : (_foundUser!['data_worker']?['profession'] ?? 'Não definido');
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 16,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      child: Column(
+        children: [
+          // ── Header do card ──
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF16A34A).withOpacity(0.06),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+              border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade100)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF16A34A).withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check_rounded,
+                      size: 14, color: Color(0xFF16A34A)),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Usuário encontrado',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF16A34A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Perfil ──
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 30,
+                      backgroundImage: NetworkImage(avatar),
+                      backgroundColor: Colors.grey.shade200,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF1C1C1E),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(email,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F8F8),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade100),
+                  ),
+                  child: Column(
+                    children: [
+                      _buildInfoRow(
+                          Icons.location_city_outlined, 'Cidade',
+                          '$city${state.isNotEmpty ? ', $state' : ''}'),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Divider(height: 1),
+                      ),
+                      _buildInfoRow(
+                          Icons.business_outlined, 'Empresa', company),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Divider(height: 1),
+                      ),
+                      _buildInfoRow(
+                          Icons.work_outline_rounded, 'Profissão', profession),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Confirmação ──
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.help_outline_rounded,
+                          size: 18, color: Color(0xFFD97706)),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Este é o usuário que deseja denunciar?',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF92400E),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // ── Botões ──
+                Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: _clearResult,
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Center(
+                            child: Text(
+                              'Não',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1C1C1E),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: GestureDetector(
+                        onTap: _confirmAndProceed,
+                        child: Container(
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: _accent,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                  color: _accent.withOpacity(0.3),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4))
+                            ],
+                          ),
+                          child: const Center(
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  'Sim, continuar',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                SizedBox(width: 6),
+                                Icon(Icons.arrow_forward_rounded,
+                                    size: 16, color: Colors.white),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Self-report card ───────────────────────────────────────────────────────
+  Widget _buildSelfReportCard() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFFED7AA)),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: 72, height: 72,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.block_rounded,
+                size: 36, color: Color(0xFFEA580C)),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'Não permitido',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF1C1C1E),
+              letterSpacing: -0.4,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Você não pode denunciar a si mesmo.\nO usuário encontrado possui o mesmo e-mail ou empresa que você.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontSize: 13, color: Colors.grey.shade500, height: 1.5),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: GestureDetector(
+              onTap: _clearResult,
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Center(
+                  child: Text(
+                    'Fazer nova busca',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
                 ),
               ),
-              const SizedBox(height: 2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey.shade400),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Row(
+            children: [
               Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                '$label  ',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w500),
+              ),
+              Expanded(
+                child: Text(
+                  value,
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1C1C1E)),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],

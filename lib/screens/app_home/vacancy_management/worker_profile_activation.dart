@@ -21,6 +21,9 @@ const _kText = Color(0xFF0F172A);
 const _kTextSub = Color(0xFF64748B);
 const _kBorder = Color(0xFFE2E8F0);
 
+// Mínimo de caracteres para o resumo profissional
+const int _kSummaryMinLength = 80;
+
 class WorkerProfileActivation extends StatefulWidget {
   final String userName;
   final String userAvatar;
@@ -64,37 +67,127 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
   late bool _currentIsActive;
   String? _professionalId;
 
+  bool _hasProfile = false;
+  bool _isCheckingProfile = true;
+
   @override
   void initState() {
     super.initState();
     _currentIsActive = widget.isActive;
-    if (_currentIsActive) _findProfessionalId();
+    _checkExistingProfile();
   }
 
-  bool _isProfileComplete() =>
-      widget.finished_basic &&
-      widget.finished_contact &&
-      widget.finished_professional;
-
-  Future<void> _findProfessionalId() async {
+  Future<void> _checkExistingProfile() async {
     try {
       final snapshot = await _database
           .child('professionals')
           .orderByChild('local_id')
           .equalTo(widget.localId)
           .once();
-      if (snapshot.snapshot.value != null) {
-        final data = snapshot.snapshot.value as Map<dynamic, dynamic>;
-        _professionalId = data.keys.first;
+
+      if (snapshot.snapshot.value == null) {
+        if (mounted)
+          setState(() {
+            _hasProfile = false;
+            _isCheckingProfile = false;
+          });
+        return;
+      }
+
+      final data = snapshot.snapshot.value as Map<dynamic, dynamic>;
+      String? activeKey;
+      String? fallbackKey;
+      data.forEach((key, value) {
+        final status =
+            (value as Map?)?['status']?.toString().toLowerCase() ?? '';
+        fallbackKey ??= key.toString();
+        if (status == 'active') activeKey = key.toString();
+      });
+
+      final resolvedKey = activeKey ?? fallbackKey!;
+      final profData =
+          Map<String, dynamic>.from(data[resolvedKey] as Map);
+      final status = profData['status']?.toString().toLowerCase() ?? '';
+
+      if (mounted) {
+        setState(() {
+          _professionalId = resolvedKey;
+          _hasProfile = true;
+          _currentIsActive = status == 'active';
+          _isCheckingProfile = false;
+        });
       }
     } catch (e) {
-      debugPrint('Erro ao buscar ID do profissional: $e');
+      debugPrint('Erro ao verificar perfil existente: $e');
+      if (mounted) setState(() => _isCheckingProfile = false);
     }
+  }
+
+  // ── Validação completa do perfil ──────────────────────────────────────────
+  bool _isProfileComplete() {
+    if (!widget.finished_basic ||
+        !widget.finished_contact ||
+        !widget.finished_professional) return false;
+
+    // Resumo precisa ter pelo menos 80 caracteres
+    final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
+    if (summary.length < _kSummaryMinLength) return false;
+
+    // Habilidades precisam estar preenchidas
+    final skills = widget.dataWorker['skills'];
+    if (skills == null || (skills as List).isEmpty) return false;
+
+    return true;
+  }
+
+  // ── Detecta o motivo específico da incompletude e exibe mensagem clara ────
+  void _handleProfileIncomplete() {
+    final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
+    final skills = widget.dataWorker['skills'];
+    final hasSkills = skills != null && (skills as List).isNotEmpty;
+
+    String message;
+
+    if (!widget.finished_basic ||
+        !widget.finished_contact ||
+        !widget.finished_professional) {
+      message =
+          'Complete todas as seções do seu perfil antes de ativar.';
+    } else if (summary.length < _kSummaryMinLength) {
+      message =
+          'Sua descrição profissional está muito curta (${summary.length}/$_kSummaryMinLength caracteres). '
+          'Acesse "Editar Perfil" → seção Profissional e preencha com pelo menos $_kSummaryMinLength caracteres.';
+    } else if (!hasSkills) {
+      message =
+          'Adicione pelo menos uma habilidade no seu perfil profissional antes de ativar.';
+    } else {
+      message = 'Complete seu perfil antes de ativar.';
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              color: Colors.white, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message)),
+        ],
+      ),
+      backgroundColor: _kOrange,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 5),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+    ));
+
+    widget.onProfileIncomplete();
   }
 
   Future<void> _activateProfile() async {
     if (!_isProfileComplete()) {
-      widget.onProfileIncomplete();
+      _handleProfileIncomplete();
       return;
     }
     setState(() => _isActivating = true);
@@ -103,12 +196,20 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
       await _database
           .child('Users/${widget.localId}/data_worker/activated')
           .set(true);
-      await _createWorkerAd();
-      setState(() {
-        _isActivating = false;
-        _currentIsActive = true;
-      });
-      await _findProfessionalId();
+
+      if (!_hasProfile) {
+        await _createWorkerAd();
+      } else if (_professionalId != null) {
+        await _database
+            .child('professionals/$_professionalId/status')
+            .set('active');
+        await _database
+            .child('professionals/$_professionalId/updated_at')
+            .set(DateTime.now().toIso8601String());
+      }
+
+      await _checkExistingProfile();
+      setState(() => _isActivating = false);
       if (mounted) {
         _showSuccessSnack('Perfil profissional ativado com sucesso!');
         widget.onActivated();
@@ -139,7 +240,11 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
       'updated_at': DateTime.now().toIso8601String(),
       'status': 'active',
       'type': 'worker',
-      'views': {'total_views': 0, 'unique_viewers': [], 'last_viewed_at': null},
+      'views': {
+        'total_views': 0,
+        'unique_viewers': [],
+        'last_viewed_at': null
+      },
     };
     final newAdRef = _database.child('professionals').push();
     await newAdRef.set(adData);
@@ -168,13 +273,15 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
   void _showSuccessSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Row(children: [
-        const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+        const Icon(Icons.check_circle_rounded,
+            color: Colors.white, size: 20),
         const SizedBox(width: 10),
         Expanded(child: Text(msg)),
       ]),
       backgroundColor: _kGreen,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.all(16),
     ));
   }
@@ -188,7 +295,8 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
       ]),
       backgroundColor: _kRed,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.all(16),
     ));
   }
@@ -198,40 +306,58 @@ class _WorkerProfileActivationState extends State<WorkerProfileActivation> {
     return Scaffold(
       backgroundColor: _kSurface,
       body: SafeArea(
-        child: widget.isActive
-            ? _ActiveProfileTabs(
-                userName: widget.userName,
-                userAvatar: widget.userAvatar,
-                userCity: widget.userCity,
-                userState: widget.userState,
-                legalType: widget.legalType,
-                dataWorker: widget.dataWorker,
-                localId: widget.localId,
-                onProfileIncomplete: widget.onProfileIncomplete,
-                finished_basic: widget.finished_basic,
-                finished_contact: widget.finished_contact,
-                finished_professional: widget.finished_professional,
-              )
-            : _InactiveView(
-                isActivating: _isActivating,
-                onActivate: _showActivationConfirmation,
-              ),
+        child: _isCheckingProfile
+            ? const Center(
+                child: CircularProgressIndicator(
+                    color: _kBlue, strokeWidth: 2.5))
+            : _hasProfile
+                ? _ActiveProfileTabs(
+                    userName: widget.userName,
+                    userAvatar: widget.userAvatar,
+                    userCity: widget.userCity,
+                    userState: widget.userState,
+                    legalType: widget.legalType,
+                    dataWorker: widget.dataWorker,
+                    localId: widget.localId,
+                    onProfileIncomplete: widget.onProfileIncomplete,
+                    finished_basic: widget.finished_basic,
+                    finished_contact: widget.finished_contact,
+                    finished_professional: widget.finished_professional,
+                  )
+                : _InactiveView(
+                    isActivating: _isActivating,
+                    onActivate: _showActivationConfirmation,
+                    dataWorker: widget.dataWorker,
+                    isProfileComplete: _isProfileComplete(),
+                  ),
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Vista Inativa — redesenhada
+// Vista Inativa — com checklist de requisitos
 // ─────────────────────────────────────────────────────────────────────────────
 class _InactiveView extends StatelessWidget {
   final bool isActivating;
   final VoidCallback onActivate;
+  final Map<String, dynamic> dataWorker;
+  final bool isProfileComplete;
 
-  const _InactiveView({required this.isActivating, required this.onActivate});
+  const _InactiveView({
+    required this.isActivating,
+    required this.onActivate,
+    required this.dataWorker,
+    required this.isProfileComplete,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final summary = dataWorker['summary']?.toString().trim() ?? '';
+    final skills = dataWorker['skills'];
+    final hasSkills = skills != null && (skills as List).isNotEmpty;
+    final summaryOk = summary.length >= _kSummaryMinLength;
+
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -240,7 +366,6 @@ class _InactiveView extends StatelessWidget {
         children: [
           const SizedBox(height: 48),
 
-          // Hero icon
           Container(
             width: 96,
             height: 96,
@@ -287,7 +412,55 @@ class _InactiveView extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
 
-          const SizedBox(height: 36),
+          const SizedBox(height: 28),
+
+          // ── Checklist de requisitos ──────────────────────────────────
+          if (!isProfileComplete) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _kOrangeSoft,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _kOrange.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.checklist_rounded,
+                          color: _kOrange, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Requisitos para ativar',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: _kOrange,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _RequirementItem(
+                    label: 'Perfil básico preenchido',
+                    ok: true,
+                  ),
+                  _RequirementItem(
+                    label: 'Habilidades adicionadas',
+                    ok: hasSkills,
+                  ),
+                  _RequirementItem(
+                    label:
+                        'Descrição profissional (${summary.length}/$_kSummaryMinLength caracteres)',
+                    ok: summaryOk,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
 
           // Feature cards
           _FeatureCard(
@@ -295,7 +468,8 @@ class _InactiveView extends StatelessWidget {
             iconColor: _kBlue,
             iconBg: _kBlueSoft,
             title: 'Anúncio Automático',
-            description: 'Criamos um anúncio baseado no seu perfil completo',
+            description:
+                'Criamos um anúncio baseado no seu perfil completo',
           ),
           const SizedBox(height: 12),
           _FeatureCard(
@@ -303,7 +477,8 @@ class _InactiveView extends StatelessWidget {
             iconColor: _kGreen,
             iconBg: _kGreenSoft,
             title: 'Visibilidade',
-            description: 'Seu perfil fica disponível no banco de profissionais',
+            description:
+                'Seu perfil fica disponível no banco de profissionais',
           ),
           const SizedBox(height: 12),
           _FeatureCard(
@@ -311,19 +486,19 @@ class _InactiveView extends StatelessWidget {
             iconColor: _kOrange,
             iconBg: _kOrangeSoft,
             title: 'Oportunidades',
-            description: 'Empresas podem te encontrar e enviar propostas',
+            description:
+                'Empresas podem te encontrar e enviar propostas',
           ),
 
           const SizedBox(height: 40),
 
-          // CTA Button
           SizedBox(
             width: double.infinity,
             height: 56,
             child: ElevatedButton(
               onPressed: isActivating ? null : onActivate,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _kBlue,
+                backgroundColor: isProfileComplete ? _kBlue : _kOrange,
                 disabledBackgroundColor: _kBorder,
                 elevation: 0,
                 shadowColor: Colors.transparent,
@@ -341,15 +516,22 @@ class _InactiveView extends StatelessWidget {
                             AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
-                  : const Row(
+                  : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.rocket_launch_rounded,
-                            color: Colors.white, size: 20),
-                        SizedBox(width: 10),
+                        Icon(
+                          isProfileComplete
+                              ? Icons.rocket_launch_rounded
+                              : Icons.edit_outlined,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
                         Text(
-                          'Ativar Perfil Profissional',
-                          style: TextStyle(
+                          isProfileComplete
+                              ? 'Ativar Perfil Profissional'
+                              : 'Complete o Perfil para Ativar',
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: Colors.white,
@@ -362,6 +544,40 @@ class _InactiveView extends StatelessWidget {
           ),
 
           const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequirementItem extends StatelessWidget {
+  final String label;
+  final bool ok;
+
+  const _RequirementItem({required this.label, required this.ok});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(
+            ok ? Icons.check_circle_rounded : Icons.cancel_rounded,
+            size: 16,
+            color: ok ? _kGreen : _kRed,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: ok ? _kText : _kRed,
+                fontWeight: ok ? FontWeight.normal : FontWeight.w600,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -426,7 +642,8 @@ class _FeatureCard extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   description,
-                  style: const TextStyle(fontSize: 13, color: _kTextSub),
+                  style:
+                      const TextStyle(fontSize: 13, color: _kTextSub),
                 ),
               ],
             ),
@@ -491,7 +708,6 @@ class _ActiveProfileTabsState extends State<_ActiveProfileTabs>
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // ── Header ─────────────────────────────────────────────────────────
         Container(
           color: _kCard,
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -542,7 +758,6 @@ class _ActiveProfileTabsState extends State<_ActiveProfileTabs>
                 ],
               ),
               const SizedBox(height: 20),
-              // Tabs
               TabBar(
                 controller: _tabController,
                 labelColor: _kBlue,
@@ -686,7 +901,8 @@ class _RequestsTabState extends State<_RequestsTab> {
         return;
       }
 
-      final requestLocalIds = List<String>.from(myProfile['requests']);
+      final requestLocalIds =
+          List<String>.from(myProfile['requests']);
 
       Map<String, dynamic> viewsData = {};
       if (myProfile['views'] != null &&
@@ -714,7 +930,8 @@ class _RequestsTabState extends State<_RequestsTab> {
             }
             bool viewedByOwner = false;
             if (viewsData.containsKey(localId)) {
-              viewedByOwner = viewsData[localId]['viewed_by_owner'] ?? false;
+              viewedByOwner =
+                  viewsData[localId]['viewed_by_owner'] ?? false;
             }
             requests.add({
               'local_id': localId,
@@ -760,8 +977,8 @@ class _RequestsTabState extends State<_RequestsTab> {
           .child('professionals/$_myProfileKey/requests')
           .once();
       if (snapshot.snapshot.value != null) {
-        List<dynamic> currentRequests =
-            List<dynamic>.from(snapshot.snapshot.value as List<dynamic>);
+        List<dynamic> currentRequests = List<dynamic>.from(
+            snapshot.snapshot.value as List<dynamic>);
         currentRequests.remove(requestLocalId);
         await _database
             .child('professionals/$_myProfileKey/requests')
@@ -784,8 +1001,8 @@ class _RequestsTabState extends State<_RequestsTab> {
             ]),
             backgroundColor: _kOrange,
             behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
             margin: const EdgeInsets.all(16),
           ));
         }
@@ -796,8 +1013,8 @@ class _RequestsTabState extends State<_RequestsTab> {
           content: Text('Erro ao recusar solicitação: $e'),
           backgroundColor: _kRed,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -841,8 +1058,8 @@ class _RequestsTabState extends State<_RequestsTab> {
           ]),
           backgroundColor: _kGreen,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -852,8 +1069,8 @@ class _RequestsTabState extends State<_RequestsTab> {
           content: const Text('Erro ao aceitar solicitação'),
           backgroundColor: _kRed,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -886,22 +1103,22 @@ class _RequestsTabState extends State<_RequestsTab> {
       onRefresh: _refreshRequests,
       child: _isLoadingRequests
           ? const Center(
-              child: CircularProgressIndicator(color: _kBlue, strokeWidth: 2.5))
+              child: CircularProgressIndicator(
+                  color: _kBlue, strokeWidth: 2.5))
           : _workRequests.isEmpty
               ? _EmptyRequests()
               : ListView.builder(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
                   physics: const BouncingScrollPhysics(),
                   itemCount: _workRequests.length,
-                  itemBuilder: (context, index) =>
-                      _RequestCard(
-                        request: _workRequests[index],
-                        onTap: () =>
-                            _showRequestDetails(_workRequests[index]),
-                        onAccept: () => _createChat(_workRequests[index]),
-                        onReject: () =>
-                            _rejectRequest(_workRequests[index]['local_id']),
-                      ),
+                  itemBuilder: (context, index) => _RequestCard(
+                    request: _workRequests[index],
+                    onTap: () =>
+                        _showRequestDetails(_workRequests[index]),
+                    onAccept: () => _createChat(_workRequests[index]),
+                    onReject: () =>
+                        _rejectRequest(_workRequests[index]['local_id']),
+                  ),
                 ),
     );
   }
@@ -941,7 +1158,8 @@ class _EmptyRequests extends StatelessWidget {
               const Text(
                 'Empresas poderão te encontrar\ne enviar solicitações por aqui.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 14, color: _kTextSub, height: 1.5),
+                style:
+                    TextStyle(fontSize: 14, color: _kTextSub, height: 1.5),
               ),
             ],
           ),
@@ -1001,7 +1219,6 @@ class _RequestCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Badge "NOVO"
                 if (isNew) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -1031,10 +1248,8 @@ class _RequestCard extends StatelessWidget {
                   const SizedBox(height: 14),
                 ],
 
-                // Perfil
                 Row(
                   children: [
-                    // Avatar
                     CircleAvatar(
                       radius: 26,
                       backgroundImage: avatar.isNotEmpty
@@ -1061,7 +1276,11 @@ class _RequestCard extends StatelessWidget {
                               color: _kText,
                             ),
                           ),
-                          if (contractorData['company']?.toString().trim().isNotEmpty == true)
+                          if (contractorData['company']
+                                  ?.toString()
+                                  .trim()
+                                  .isNotEmpty ==
+                              true)
                             Padding(
                               padding: const EdgeInsets.only(top: 3),
                               child: Text(
@@ -1095,7 +1314,6 @@ class _RequestCard extends StatelessWidget {
                 const Divider(color: _kBorder, height: 1),
                 const SizedBox(height: 14),
 
-                // Ações
                 Row(
                   children: [
                     Expanded(
@@ -1215,6 +1433,7 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   final DatabaseReference _database = FirebaseDatabase.instance.ref();
   bool _isUpdating = false;
   String? _professionalId;
+  bool _currentProfessionalIsActive = false;
 
   @override
   void initState() {
@@ -1222,10 +1441,62 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
     _findProfessionalId();
   }
 
-  bool _isProfileComplete() =>
-      widget.finished_basic &&
-      widget.finished_contact &&
-      widget.finished_professional;
+  bool _isProfileComplete() {
+    if (!widget.finished_basic ||
+        !widget.finished_contact ||
+        !widget.finished_professional) return false;
+
+    final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
+    if (summary.length < _kSummaryMinLength) return false;
+
+    final skills = widget.dataWorker['skills'];
+    if (skills == null || (skills as List).isEmpty) return false;
+
+    return true;
+  }
+
+  void _handleProfileIncomplete() {
+    final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
+    final skills = widget.dataWorker['skills'];
+    final hasSkills = skills != null && (skills as List).isNotEmpty;
+
+    String message;
+    if (!widget.finished_basic ||
+        !widget.finished_contact ||
+        !widget.finished_professional) {
+      message =
+          'Complete todas as seções do perfil antes de sincronizar.';
+    } else if (summary.length < _kSummaryMinLength) {
+      message =
+          'Descrição profissional muito curta (${summary.length}/$_kSummaryMinLength caracteres). '
+          'Acesse "Editar Perfil" → seção Profissional e preencha corretamente.';
+    } else if (!hasSkills) {
+      message =
+          'Adicione habilidades ao seu perfil antes de sincronizar.';
+    } else {
+      message = 'Complete seu perfil antes de sincronizar.';
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.warning_amber_rounded,
+              color: Colors.white, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message)),
+        ],
+      ),
+      backgroundColor: _kOrange,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 5),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+    ));
+
+    widget.onProfileIncomplete();
+  }
 
   Future<void> _findProfessionalId() async {
     try {
@@ -1236,7 +1507,25 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           .once();
       if (snapshot.snapshot.value != null) {
         final data = snapshot.snapshot.value as Map<dynamic, dynamic>;
-        setState(() => _professionalId = data.keys.first);
+        String? activeKey;
+        String? fallbackKey;
+        data.forEach((key, value) {
+          final status =
+              (value as Map?)?['status']?.toString().toLowerCase() ?? '';
+          fallbackKey ??= key.toString();
+          if (status == 'active') activeKey = key.toString();
+        });
+        final resolvedKey = activeKey ?? fallbackKey;
+        if (resolvedKey != null) {
+          final profData =
+              Map<String, dynamic>.from(data[resolvedKey] as Map);
+          final status =
+              profData['status']?.toString().toLowerCase() ?? '';
+          setState(() {
+            _professionalId = resolvedKey;
+            _currentProfessionalIsActive = status == 'active';
+          });
+        }
       }
     } catch (e) {
       debugPrint('Erro ao buscar ID do profissional: $e');
@@ -1245,7 +1534,7 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
   Future<void> _updateProfessionalProfile() async {
     if (!_isProfileComplete()) {
-      widget.onProfileIncomplete();
+      _handleProfileIncomplete();
       return;
     }
     if (_professionalId == null) {
@@ -1282,14 +1571,15 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Row(children: [
-            Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+            Icon(Icons.check_circle_rounded,
+                color: Colors.white, size: 18),
             SizedBox(width: 10),
             Text('Perfil atualizado com sucesso!'),
           ]),
           backgroundColor: _kGreen,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1300,8 +1590,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           content: Text('Erro ao atualizar perfil: $e'),
           backgroundColor: _kRed,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
       }
@@ -1332,8 +1622,12 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
   @override
   Widget build(BuildContext context) {
     final skills = (widget.dataWorker['skills'] as List?) ?? [];
-    final profession =
-        widget.dataWorker['profession']?.toString() ?? 'Profissão não definida';
+    final profession = widget.dataWorker['profession']?.toString() ??
+        'Profissão não definida';
+    final summary = widget.dataWorker['summary']?.toString().trim() ?? '';
+    final summaryOk = summary.length >= _kSummaryMinLength;
+    final hasSkills = skills.isNotEmpty;
+    final profileComplete = _isProfileComplete();
 
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
@@ -1343,7 +1637,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
           // ── Avatar + Nome ─────────────────────────────────────────────
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+            padding:
+                const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
             decoration: BoxDecoration(
               color: _kCard,
               borderRadius: BorderRadius.circular(20),
@@ -1393,10 +1688,84 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
           const SizedBox(height: 16),
 
+          // ── Alerta se perfil incompleto ───────────────────────────────
+          if (!profileComplete) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _kOrangeSoft,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _kOrange.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded,
+                          color: _kOrange, size: 18),
+                      SizedBox(width: 8),
+                      Text(
+                        'Perfil incompleto',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: _kOrange,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _RequirementItem(
+                    label: 'Habilidades adicionadas',
+                    ok: hasSkills,
+                  ),
+                  _RequirementItem(
+                    label:
+                        'Descrição profissional (${summary.length}/$_kSummaryMinLength caracteres)',
+                    ok: summaryOk,
+                  ),
+                  if (!summaryOk) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: _kOrange.withOpacity(0.2)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 14, color: _kOrange),
+                          SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Acesse "Editar Perfil" → seção Profissional para preencher sua descrição.',
+                              style: TextStyle(
+                                  fontSize: 12, color: _kOrange),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+
           // ── Status Control ────────────────────────────────────────────
           ProfessionalStatusControlWidget(
-            initialIsActive: true,
-            onStatusChanged: () => setState(() {}),
+            initialIsActive: _currentProfessionalIsActive,
+            localId: widget.localId,
+            professionalId: _professionalId ?? '',
+            onStatusChanged: (bool isNowActive) {
+              setState(() => _currentProfessionalIsActive = isNowActive);
+            },
           ),
 
           const SizedBox(height: 16),
@@ -1442,7 +1811,10 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                       : 'Pessoa Física',
                 ),
                 if (widget.legalType == 'PJ' &&
-                    widget.dataWorker['company']?.toString().trim().isNotEmpty ==
+                    widget.dataWorker['company']
+                            ?.toString()
+                            .trim()
+                            .isNotEmpty ==
                         true)
                   _InfoRow(
                     icon: Icons.business_outlined,
@@ -1492,7 +1864,6 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
           const SizedBox(height: 16),
 
-          // ── Info banner ───────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -1502,7 +1873,8 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
             ),
             child: const Row(
               children: [
-                Icon(Icons.info_outline_rounded, color: _kBlue, size: 18),
+                Icon(Icons.info_outline_rounded,
+                    color: _kBlue, size: 18),
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -1517,14 +1889,13 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
 
           const SizedBox(height: 20),
 
-          // ── Botão Atualizar ───────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             height: 54,
             child: ElevatedButton(
               onPressed: _isUpdating ? null : _showUpdateConfirmation,
               style: ElevatedButton.styleFrom(
-                backgroundColor: _kBlue,
+                backgroundColor: profileComplete ? _kBlue : _kOrange,
                 disabledBackgroundColor: _kBorder,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -1541,15 +1912,22 @@ class _UpdateProfileTabState extends State<_UpdateProfileTab> {
                             AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     )
-                  : const Row(
+                  : Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.sync_rounded,
-                            color: Colors.white, size: 20),
-                        SizedBox(width: 10),
+                        Icon(
+                          profileComplete
+                              ? Icons.sync_rounded
+                              : Icons.edit_outlined,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
                         Text(
-                          'Sincronizar Perfil Profissional',
-                          style: TextStyle(
+                          profileComplete
+                              ? 'Sincronizar Perfil Profissional'
+                              : 'Complete o Perfil para Sincronizar',
+                          style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
                             color: Colors.white,
@@ -1597,7 +1975,8 @@ class _InfoRow extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(label,
-                  style: const TextStyle(fontSize: 11, color: _kTextSub)),
+                  style:
+                      const TextStyle(fontSize: 11, color: _kTextSub)),
               const SizedBox(height: 1),
               Text(
                 value,
@@ -1677,7 +2056,6 @@ class _ConfirmationScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         child: Column(
           children: [
-            // Avatar
             CircleAvatar(
               radius: 52,
               backgroundImage:
@@ -1706,7 +2084,6 @@ class _ConfirmationScreen extends StatelessWidget {
             ),
             const SizedBox(height: 28),
 
-            // Info card
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -1732,8 +2109,7 @@ class _ConfirmationScreen extends StatelessWidget {
                   _ConfirmRow(
                       icon: Icons.work_outline_rounded,
                       label: 'Profissão',
-                      value:
-                          dataWorker['profession'] ?? 'Não definida'),
+                      value: dataWorker['profession'] ?? 'Não definida'),
                   _ConfirmRow(
                       icon: Icons.badge_outlined,
                       label: 'Tipo',
@@ -1741,7 +2117,10 @@ class _ConfirmationScreen extends StatelessWidget {
                           ? 'Pessoa Jurídica'
                           : 'Pessoa Física'),
                   if (legalType == 'PJ' &&
-                      dataWorker['company']?.toString().trim().isNotEmpty ==
+                      dataWorker['company']
+                              ?.toString()
+                              .trim()
+                              .isNotEmpty ==
                           true)
                     _ConfirmRow(
                         icon: Icons.business_outlined,
@@ -1751,7 +2130,8 @@ class _ConfirmationScreen extends StatelessWidget {
                       icon: Icons.location_on_outlined,
                       label: 'Localização',
                       value: '$userCity, $userState'),
-                  if (dataWorker['summary']?.toString().isNotEmpty == true) ...[
+                  if (dataWorker['summary']?.toString().isNotEmpty ==
+                      true) ...[
                     const SizedBox(height: 4),
                     const Divider(color: _kBorder),
                     const SizedBox(height: 12),
@@ -1858,8 +2238,7 @@ class _ConfirmationScreen extends StatelessWidget {
                 child: ElevatedButton(
                   onPressed: onConfirm,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                        isUpdate ? _kBlue : _kGreen,
+                    backgroundColor: isUpdate ? _kBlue : _kGreen,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 15),
                     shape: RoundedRectangleBorder(
@@ -1992,7 +2371,6 @@ class _RequestDetailsScreen extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
         child: Column(
           children: [
-            // Avatar hero
             CircleAvatar(
               radius: 50,
               backgroundImage:
@@ -2014,16 +2392,17 @@ class _RequestDetailsScreen extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             if (contractorData['profession']?.toString() != null &&
-                contractorData['profession'].toString() != 'Não definida') ...[
+                contractorData['profession'].toString() !=
+                    'Não definida') ...[
               const SizedBox(height: 4),
               Text(
                 contractorData['profession'],
-                style: const TextStyle(fontSize: 14, color: _kTextSub),
+                style:
+                    const TextStyle(fontSize: 14, color: _kTextSub),
               ),
             ],
             const SizedBox(height: 24),
 
-            // Contato
             _DetailSection(
               title: 'Informações de Contato',
               children: [
@@ -2033,13 +2412,17 @@ class _RequestDetailsScreen extends StatelessWidget {
                     label: 'E-mail',
                     value: requestData['email'],
                   ),
-                if (requestData['email_contact']?.toString().isNotEmpty == true)
+                if (requestData['email_contact']
+                        ?.toString()
+                        .isNotEmpty ==
+                    true)
                   _DetailRow(
                     icon: Icons.alternate_email_rounded,
                     label: 'E-mail de Contato',
                     value: requestData['email_contact'],
                   ),
-                if (requestData['telefone']?.toString().isNotEmpty == true &&
+                if (requestData['telefone']?.toString().isNotEmpty ==
+                        true &&
                     requestData['telefone'] != 'Não definido')
                   _DetailRow(
                     icon: Icons.phone_outlined,
@@ -2063,11 +2446,13 @@ class _RequestDetailsScreen extends StatelessWidget {
 
             const SizedBox(height: 16),
 
-            // Profissional
             _DetailSection(
               title: 'Informações Profissionais',
               children: [
-                if (contractorData['company']?.toString().trim().isNotEmpty ==
+                if (contractorData['company']
+                        ?.toString()
+                        .trim()
+                        .isNotEmpty ==
                     true)
                   _DetailRow(
                     icon: Icons.business_outlined,
@@ -2075,7 +2460,8 @@ class _RequestDetailsScreen extends StatelessWidget {
                     value: contractorData['company'],
                   ),
                 if (contractorData['profession']?.toString() != null &&
-                    contractorData['profession'].toString() != 'Não definida')
+                    contractorData['profession'].toString() !=
+                        'Não definida')
                   _DetailRow(
                     icon: Icons.work_outline_rounded,
                     label: 'Profissão',
@@ -2090,7 +2476,8 @@ class _RequestDetailsScreen extends StatelessWidget {
                           ? 'Pessoa Física'
                           : 'Não definido',
                 ),
-                if (contractorData['summary']?.toString().isNotEmpty == true &&
+                if (contractorData['summary']?.toString().isNotEmpty ==
+                        true &&
                     contractorData['summary'] != 'Não definido') ...[
                   const SizedBox(height: 4),
                   const Divider(color: _kBorder),
@@ -2132,7 +2519,8 @@ class _RequestDetailsScreen extends StatelessWidget {
                   onPressed: onReject,
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 15),
-                    side: BorderSide(color: _kRed.withOpacity(0.4)),
+                    side:
+                        BorderSide(color: _kRed.withOpacity(0.4)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),

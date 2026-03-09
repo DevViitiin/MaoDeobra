@@ -9,18 +9,22 @@ import '../models/search_model/vacancy_model.dart';
 
 class VacancyCard extends StatelessWidget {
   final VacancyModel vacancy;
-  final Function(int)? onNavigateToTab; // ✅ Callback para navegar mantendo nav bar
+  final Function(int)? onNavigateToTab;
 
   const VacancyCard({
     Key? key,
     required this.vacancy,
-    this.onNavigateToTab, // ✅ Opcional
+    this.onNavigateToTab,
   }) : super(key: key);
 
   bool get _isOwnVacancy {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     return currentUserId != null && vacancy.localId == currentUserId;
   }
+
+  // localId do usuário atual (uid do Firebase)
+  String get _localId =>
+      FirebaseAuth.instance.currentUser?.uid ?? vacancy.localId;
 
   @override
   Widget build(BuildContext context) {
@@ -52,7 +56,6 @@ class VacancyCard extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Ícone da vaga
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -76,8 +79,6 @@ class VacancyCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
-
-                  // Título, empresa e badge
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -96,7 +97,6 @@ class VacancyCard extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            // Badge "Minha Vaga"
                             if (_isOwnVacancy) ...[
                               const SizedBox(width: 8),
                               Container(
@@ -114,11 +114,9 @@ class VacancyCard extends StatelessWidget {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
-                                      Icons.check_circle,
-                                      size: 12,
-                                      color: Colors.green.shade700,
-                                    ),
+                                    Icon(Icons.check_circle,
+                                        size: 12,
+                                        color: Colors.green.shade700),
                                     const SizedBox(width: 4),
                                     Text(
                                       'Minha',
@@ -138,11 +136,8 @@ class VacancyCard extends StatelessWidget {
                           const SizedBox(height: 6),
                           Row(
                             children: [
-                              Icon(
-                                Icons.business_outlined,
-                                size: 14,
-                                color: Colors.grey.shade600,
-                              ),
+                              Icon(Icons.business_outlined,
+                                  size: 14, color: Colors.grey.shade600),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Text(
@@ -165,8 +160,6 @@ class VacancyCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-
-              // Profissão
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -175,19 +168,13 @@ class VacancyCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.teal.shade50,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.teal.shade200,
-                    width: 0.5,
-                  ),
+                  border: Border.all(color: Colors.teal.shade200, width: 0.5),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.person_outline,
-                      size: 14,
-                      color: Colors.teal.shade800,
-                    ),
+                    Icon(Icons.person_outline,
+                        size: 14, color: Colors.teal.shade800),
                     const SizedBox(width: 6),
                     Flexible(
                       child: Text(
@@ -205,27 +192,19 @@ class VacancyCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-
-              // Informações adicionais
               Row(
                 children: [
-                  // Localização
                   Expanded(
                     child: Row(
                       children: [
-                        Icon(
-                          Icons.location_on_outlined,
-                          size: 16,
-                          color: Colors.grey.shade700,
-                        ),
+                        Icon(Icons.location_on_outlined,
+                            size: 16, color: Colors.grey.shade700),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
                             '${vacancy.city}, ${vacancy.state}',
                             style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade700,
-                            ),
+                                fontSize: 13, color: Colors.grey.shade700),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -233,22 +212,16 @@ class VacancyCard extends StatelessWidget {
                       ],
                     ),
                   ),
-
-                  // Salário
                   if (vacancy.salary.isNotEmpty) ...[
                     const SizedBox(width: 12),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
+                          horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.green.shade50,
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: Colors.green.shade200,
-                          width: 0.5,
-                        ),
+                            color: Colors.green.shade200, width: 0.5),
                       ),
                       child: Text(
                         vacancy.salary,
@@ -263,8 +236,6 @@ class VacancyCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 12),
-
-              // Botão de ação
               Align(
                 alignment: Alignment.centerRight,
                 child: _isOwnVacancy
@@ -286,16 +257,10 @@ class VacancyCard extends StatelessWidget {
       style: TextButton.styleFrom(
         foregroundColor: Colors.green.shade700,
         backgroundColor: Colors.green.shade50,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 8,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: Colors.green.shade300,
-            width: 1,
-          ),
+          side: BorderSide(color: Colors.green.shade300, width: 1),
         ),
       ),
     );
@@ -308,15 +273,11 @@ class VacancyCard extends StatelessWidget {
       label: const Text('Ver detalhes'),
       style: TextButton.styleFrom(
         foregroundColor: Colors.blue.shade700,
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 6,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       ),
     );
   }
 
-  // ✅ Navegar para vaga de outro contratante
   void _navigateToDetail(BuildContext context) {
     Navigator.push(
       context,
@@ -330,18 +291,15 @@ class VacancyCard extends StatelessWidget {
     );
   }
 
-  // ✅ Navegar para MINHA vaga — edição via SnackBar
   void _navigateToMyVacancy(BuildContext context) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => MyVacancyDetailPage(
           vacancy: vacancy,
+          localId: _localId,
           onEditVacancy: () {
-            // Fecha a tela de visualização
             Navigator.pop(context);
-
-            // ✅ Exibe SnackBar orientando o usuário a ir para a tela de Vagas
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: const Text(
