@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'package:dartobra_new/services/services_storage/service_moderation_image.dart';
 import 'package:dartobra_new/services/services_storage/service_storage.dart';
 import 'package:dartobra_new/widgets/permissions/permissions_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:dartobra_new/screens/app_home/edit_principal_profile/components.dart';
+
 
 class EditBasicInfoScreen extends StatefulWidget {
   final String local_id;
@@ -65,6 +67,7 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
   String? _currentAvatarUrl;
   String? _oldAvatarUrl;
   bool _isSaving = false;
+  bool _isCheckingImage = false;
   double _uploadProgress = 0.0;
 
   @override
@@ -202,13 +205,30 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
       );
 
       if (image != null) {
-        setState(() {
-          _profileImage = File(image.path);
-          _currentAvatarUrl = null;
-        });
+        final file = File(image.path);
+
+        // ── Moderação via Vision API ────────────────────────────────────────
+        setState(() => _isCheckingImage = true);
+        final approved = await checkAndShowModerationDialog(
+          context,
+          file,
+          onCheckEnd: () => setState(() => _isCheckingImage = false),
+        );
+        setState(() => _isCheckingImage = false);
+
+        if (!mounted) return;
+
+        if (approved) {
+          setState(() {
+            _profileImage = file;
+            _currentAvatarUrl = null;
+          });
+        }
+        // Se reprovada, mantém a foto anterior sem alteração
       }
     } catch (e) {
       debugPrint('Erro ao selecionar imagem: $e');
+      setState(() => _isCheckingImage = false);
       _showSnackBar('Erro ao selecionar imagem', isError: true);
     }
   }
@@ -589,6 +609,46 @@ class _EditBasicInfoScreenState extends State<EditBasicInfoScreen> {
                           Text(
                             'Enviando: ${(_uploadProgress * 100).toStringAsFixed(0)}%',
                             style: const TextStyle(fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Overlay de verificação de imagem
+            if (_isCheckingImage)
+              Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Card(
+                    margin: const EdgeInsets.all(20),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFF3B82F6)),
+                            strokeWidth: 3,
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Verificando imagem...',
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Garantindo que o conteúdo é seguro\npara nossa comunidade',
+                            style:
+                                TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),

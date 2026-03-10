@@ -1,5 +1,6 @@
 // ignore_for_file: unused_field
 
+import 'package:dartobra_new/services/services_storage/service_moderation_image.dart';
 import 'package:dartobra_new/services/services_storage/service_storage.dart';
 import 'package:dartobra_new/services/services_vacancy/vacancy_service.dart';
 import 'package:dartobra_new/widgets/permissions/permissions_utils.dart';
@@ -9,6 +10,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'package:image_picker/image_picker.dart';
 import 'components.dart';
 import 'dart:io';
+
 
 class CreateVacancys extends StatefulWidget {
   final bool isEditing;
@@ -57,6 +59,7 @@ class _CreateVacancysState extends State<CreateVacancys> {
 
   // Loading states
   bool _isUploading = false;
+  bool _isCheckingImage = false;
   String _uploadStatus = '';
   double _uploadProgress = 0.0;
 
@@ -168,20 +171,37 @@ class _CreateVacancysState extends State<CreateVacancys> {
       final List<XFile> images = await _picker.pickMultiImage();
       if (images.isNotEmpty) {
         final int remainingSlots = 3 - _selectedImages.length;
-        final List<File> imagesToAdd =
-            images.take(remainingSlots).map((img) => File(img.path)).toList();
+        final List<XFile> candidates = images.take(remainingSlots).toList();
 
-        setState(() => _selectedImages.addAll(imagesToAdd));
+        for (final xfile in candidates) {
+          final file = File(xfile.path);
+
+          // ── Moderação via Vision API ────────────────────────────────────
+          setState(() => _isCheckingImage = true);
+          final approved = await checkAndShowModerationDialog(
+            context,
+            file,
+            onCheckEnd: () => setState(() => _isCheckingImage = false),
+          );
+          setState(() => _isCheckingImage = false);
+
+          if (!mounted) return;
+          if (approved) {
+            setState(() => _selectedImages.add(file));
+          }
+          // Se reprovada, simplesmente ignora e continua para a próxima
+        }
 
         if (images.length > remainingSlots) {
           _showSnackBar(
-            'Apenas ${imagesToAdd.length} foto(s) adicionada(s). Limite: 3 fotos',
+            'Apenas $remainingSlots foto(s) podiam ser adicionadas. Limite: 3 fotos',
             Colors.orange,
           );
         }
       }
     } catch (e) {
       debugPrint('Erro ao selecionar imagens: $e');
+      setState(() => _isCheckingImage = false);
       _showSnackBar('Erro ao selecionar imagens', Colors.red);
     }
   }
@@ -547,6 +567,46 @@ class _CreateVacancysState extends State<CreateVacancys> {
                                   fontSize: 14, color: Colors.grey[600]),
                             ),
                           ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+            // Overlay de verificação de imagem
+            if (_isCheckingImage)
+              Container(
+                color: Colors.black54,
+                child: Center(
+                  child: Card(
+                    margin: const EdgeInsets.all(20),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 20),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFFFF6B35)),
+                            strokeWidth: 3,
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Verificando imagem...',
+                            style: TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w600),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Garantindo que o conteúdo é seguro\npara nossa comunidade',
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                            textAlign: TextAlign.center,
+                          ),
                         ],
                       ),
                     ),
