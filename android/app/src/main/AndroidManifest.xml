@@ -13,7 +13,6 @@
 
     <!-- Armazenamento — Android 13+ (SDK 33+) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
 
     <!-- Armazenamento — Android 10, 11, 12 (SDK 29–32) -->
     <uses-permission
