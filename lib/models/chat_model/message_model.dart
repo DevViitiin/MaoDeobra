@@ -1,61 +1,58 @@
+// lib/models/chat_model/message_model.dart
+
 class Message {
   final String id;
-  final String sender; // 'contractor' ou 'employee'
   final String text;
+  final String sender;
   final int timestamp;
   final bool readByContractor;
   final bool readByEmployee;
 
   Message({
     required this.id,
-    required this.sender,
     required this.text,
+    required this.sender,
     required this.timestamp,
-    this.readByContractor = false,
-    this.readByEmployee = false,
+    required this.readByContractor,
+    required this.readByEmployee,
   });
 
-  // Parse do Firebase
+  /// Firebase usa snake_case: read_by_contractor / read_by_employee
   factory Message.fromMap(String id, Map<dynamic, dynamic> map) {
     return Message(
       id: id,
-      sender: map['sender'] as String? ?? '',
       text: map['text'] as String? ?? '',
+      sender: map['sender'] as String? ?? '',
       timestamp: map['timestamp'] as int? ?? 0,
+      // ✅ lê os campos exatos do banco (snake_case)
       readByContractor: map['read_by_contractor'] as bool? ?? false,
       readByEmployee: map['read_by_employee'] as bool? ?? false,
     );
   }
 
-  // Para enviar ao Firebase
   Map<String, dynamic> toMap() {
     return {
-      'sender': sender,
       'text': text,
+      'sender': sender,
       'timestamp': timestamp,
+      // ✅ salva em snake_case igual ao banco
       'read_by_contractor': readByContractor,
       'read_by_employee': readByEmployee,
     };
   }
 
-  // Helper: se foi lida pelo usuário atual
-  bool isReadBy(String role) {
-    return role == 'contractor' ? readByContractor : readByEmployee;
-  }
-
-  // CopyWith para atualizações
   Message copyWith({
     String? id,
-    String? sender,
     String? text,
+    String? sender,
     int? timestamp,
     bool? readByContractor,
     bool? readByEmployee,
   }) {
     return Message(
       id: id ?? this.id,
-      sender: sender ?? this.sender,
       text: text ?? this.text,
+      sender: sender ?? this.sender,
       timestamp: timestamp ?? this.timestamp,
       readByContractor: readByContractor ?? this.readByContractor,
       readByEmployee: readByEmployee ?? this.readByEmployee,

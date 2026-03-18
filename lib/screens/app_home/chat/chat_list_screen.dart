@@ -2,18 +2,6 @@
 
 // ignore_for_file: unused_field
 
-// ⚠️ ATENÇÃO: Adicione o campo abaixo ao seu Chat model (chat_model.dart):
-//
-//   final bool blockDialog;
-//
-// E no Chat.fromMap():
-//   blockDialog: map['block_dialog'] as bool? ?? false,
-//
-// E no construtor do Chat:
-//   required this.blockDialog,
-//
-// Sem isso, chat.blockDialog não funcionará.
-
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/core/utils/date_utils.dart';
 import 'package:dartobra_new/models/chat_model/chat_model.dart';
@@ -242,7 +230,6 @@ class _ChatListScreenState extends State<ChatListScreen>
   }
 
   void _openChat(Chat chat, String roleFilter) async {
-    // ── Bloqueado: exibe popup e não navega ──────────────────────────────────
     if (chat.blockDialog) {
       _showBlockedDialog(context);
       return;
@@ -289,7 +276,6 @@ class _ChatListScreenState extends State<ChatListScreen>
     }
   }
 
-  /// Popup exibido ao clicar em chat bloqueado
   void _showBlockedDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -306,7 +292,6 @@ class _ChatListScreenState extends State<ChatListScreen>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Ícone
               Container(
                 width: 68,
                 height: 68,
@@ -321,8 +306,6 @@ class _ChatListScreenState extends State<ChatListScreen>
                 ),
               ),
               const SizedBox(height: 20),
-
-              // Título
               const Text(
                 'Conversa bloqueada',
                 style: TextStyle(
@@ -333,8 +316,6 @@ class _ChatListScreenState extends State<ChatListScreen>
                 ),
               ),
               const SizedBox(height: 10),
-
-              // Corpo
               Text(
                 'Esta conversa foi bloqueada devido a denúncias envolvendo uma das partes.\n\n'
                 'Para solicitar a reversão do bloqueio, entre em contato com o nosso suporte.',
@@ -346,8 +327,6 @@ class _ChatListScreenState extends State<ChatListScreen>
                 ),
               ),
               const SizedBox(height: 28),
-
-              // Botão fechar
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -408,7 +387,6 @@ class _ChatListTabState extends State<_ChatListTab> {
       stream: chatService.getChatListStream(widget.userId, widget.roleFilter),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          print('❌ Erro no stream de chats: ${snapshot.error}');
           return _buildErrorWidget(context, snapshot.error.toString());
         }
 
@@ -429,12 +407,8 @@ class _ChatListTabState extends State<_ChatListTab> {
         }
 
         final allChats = snapshot.data ?? [];
-
-        // Separa chats normais e bloqueados
-        final normalChats =
-            allChats.where((c) => !c.blockDialog).toList();
-        final blockedChats =
-            allChats.where((c) => c.blockDialog).toList();
+        final normalChats = allChats.where((c) => !c.blockDialog).toList();
+        final blockedChats = allChats.where((c) => c.blockDialog).toList();
 
         if (allChats.isEmpty) {
           return _buildEmptyState(context, widget.roleFilter);
@@ -487,7 +461,7 @@ class _ChatListTabState extends State<_ChatListTab> {
                 );
               }),
 
-              // ── Seção "Bloqueados" (só aparece se houver algum) ────────
+              // ── Seção "Bloqueados" ──────────────────────────────────────
               if (blockedChats.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 _BlockedSectionHeader(
@@ -594,7 +568,7 @@ class _ChatListTabState extends State<_ChatListTab> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Header da seção "Bloqueados" (estilo WhatsApp Arquivados)
+// Header da seção "Bloqueados"
 // ─────────────────────────────────────────────────────────────────────────────
 class _BlockedSectionHeader extends StatelessWidget {
   final int count;
@@ -614,8 +588,7 @@ class _BlockedSectionHeader extends StatelessWidget {
       child: InkWell(
         onTap: onToggle,
         child: Container(
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: Colors.grey.shade50,
             border: Border(
@@ -628,7 +601,6 @@ class _BlockedSectionHeader extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Ícone cadeado
               Container(
                 width: 38,
                 height: 38,
@@ -643,8 +615,6 @@ class _BlockedSectionHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-
-              // Label + contador
               Expanded(
                 child: Row(
                   children: [
@@ -676,8 +646,6 @@ class _BlockedSectionHeader extends StatelessWidget {
                   ],
                 ),
               ),
-
-              // Seta
               AnimatedRotation(
                 turns: expanded ? 0.5 : 0,
                 duration: const Duration(milliseconds: 200),
@@ -740,131 +708,167 @@ class _ChatListTile extends StatelessWidget {
           final userData = userSnapshot.data ??
               UserData(name: 'Usuário', avatar: '', profession: '');
 
-          // ── Bloqueado: tile simplificado sem unread count ──────────────
           if (isBlocked) {
             return _buildBlockedTile(context, userData);
           }
 
-          // ── Normal: com unread count stream ───────────────────────────
+          // ── Stream do MEU unreadCount (para badge e negrito)
           return StreamBuilder<int>(
-            stream:
-                ChatServiceFinal().getUnreadCountStream(chat.chatId, userRole),
+            stream: ChatServiceFinal()
+                .getUnreadCountStream(chat.chatId, userRole),
             initialData: 0,
-            builder: (context, unreadSnapshot) {
-              final unreadCount = unreadSnapshot.data ?? 0;
+            builder: (context, myUnreadSnapshot) {
+              final myUnreadCount = myUnreadSnapshot.data ?? 0;
 
-              return Material(
-                color: Colors.white,
-                child: InkWell(
-                  onTap: onTap,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    child: Row(
-                      children: [
-                        OnlineStatusBadge(
-                          isOnline: otherParticipant.isOnline,
-                          child: CircleAvatar(
-                            radius: 28,
-                            backgroundColor: Colors.grey[300],
-                            backgroundImage: userData.avatar.isNotEmpty
-                                ? NetworkImage(userData.avatar)
-                                : null,
-                            child: userData.avatar.isEmpty
-                                ? const Icon(Icons.person,
-                                    color: Colors.white, size: 28)
-                                : null,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      userData.name,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: unreadCount > 0
-                                            ? FontWeight.bold
-                                            : FontWeight.w500,
-                                        color: Colors.black87,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _formatTime(chat.metadata.lastTimestamp),
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
+              // ── Stream do unreadCount do DESTINATÁRIO (para ícone de leitura)
+              return StreamBuilder<int>(
+                stream: ChatServiceFinal()
+                    .getUnreadCountStream(chat.chatId, otherRole),
+                initialData: 0,
+                builder: (context, otherUnreadSnapshot) {
+                  final otherUnreadCount = otherUnreadSnapshot.data ?? 0;
+
+                  // Eu enviei a última mensagem?
+                  final iLastSender =
+                      chat.metadata.lastSender == userRole;
+
+                  // Destinatário leu = eu enviei + unread do outro é 0
+                  final recipientRead =
+                      iLastSender && otherUnreadCount == 0;
+
+                  return Material(
+                    color: Colors.white,
+                    child: InkWell(
+                      onTap: onTap,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            OnlineStatusBadge(
+                              isOnline: otherParticipant.isOnline,
+                              child: CircleAvatar(
+                                radius: 28,
+                                backgroundColor: Colors.grey[300],
+                                backgroundImage:
+                                    userData.avatar.isNotEmpty
+                                        ? NetworkImage(userData.avatar)
+                                        : null,
+                                child: userData.avatar.isEmpty
+                                    ? const Icon(Icons.person,
+                                        color: Colors.white, size: 28)
+                                    : null,
                               ),
-                              const SizedBox(height: 4),
-                              Row(
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
-                                  if (chat.metadata.lastSender == userRole)
-                                    const Padding(
-                                      padding: EdgeInsets.only(right: 4),
-                                      child: Icon(Icons.done_all,
-                                          size: 16, color: Colors.blue),
-                                    ),
-                                  Expanded(
-                                    child: Text(
-                                      chat.metadata.lastMessage.isEmpty
-                                          ? 'Nenhuma mensagem ainda'
-                                          : chat.metadata.lastMessage,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: unreadCount > 0
-                                            ? Colors.black87
-                                            : Colors.grey[600],
-                                        fontWeight: unreadCount > 0
-                                            ? FontWeight.w600
-                                            : FontWeight.normal,
-                                      ),
-                                    ),
-                                  ),
-                                  if (unreadCount > 0) ...[
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context).primaryColor,
-                                        borderRadius:
-                                            BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        unreadCount > 99
-                                            ? '99+'
-                                            : '$unreadCount',
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          userData.name,
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: myUnreadCount > 0
+                                                ? FontWeight.bold
+                                                : FontWeight.w500,
+                                            color: Colors.black87,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        _formatTime(
+                                            chat.metadata.lastTimestamp),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      // ✅ CORRIGIDO: ícone só aparece se EU
+                                      // enviei a última mensagem
+                                      if (iLastSender)
+                                        Padding(
+                                          padding: const EdgeInsets.only(
+                                              right: 4),
+                                          child: Icon(
+                                            recipientRead
+                                                ? Icons.done_all
+                                                : Icons.done,
+                                            size: 16,
+                                            color: recipientRead
+                                                ? Colors.blue
+                                                : Colors.grey,
+                                          ),
+                                        ),
+
+                                      Expanded(
+                                        child: Text(
+                                          chat.metadata.lastMessage
+                                                  .isEmpty
+                                              ? 'Nenhuma mensagem ainda'
+                                              : chat.metadata.lastMessage,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: myUnreadCount > 0
+                                                ? Colors.black87
+                                                : Colors.grey[600],
+                                            fontWeight: myUnreadCount > 0
+                                                ? FontWeight.w600
+                                                : FontWeight.normal,
+                                          ),
+                                        ),
+                                      ),
+                                      if (myUnreadCount > 0) ...[
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding:
+                                              const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .primaryColor,
+                                            borderRadius:
+                                                BorderRadius.circular(
+                                                    12),
+                                          ),
+                                          child: Text(
+                                            myUnreadCount > 99
+                                                ? '99+'
+                                                : '$myUnreadCount',
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                ),
+                  );
+                },
               );
             },
           );
@@ -873,7 +877,6 @@ class _ChatListTile extends StatelessWidget {
     );
   }
 
-  // Tile com visual "bloqueado" — acinzentado + ícone cadeado
   Widget _buildBlockedTile(BuildContext context, UserData userData) {
     return Material(
       color: Colors.white,
@@ -886,7 +889,6 @@ class _ChatListTile extends StatelessWidget {
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
-                // Avatar sem badge de online (bloqueado não mostra status)
                 Stack(
                   children: [
                     CircleAvatar(
@@ -909,7 +911,8 @@ class _ChatListTile extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: const Color(0xFFDC2626),
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2),
+                          border:
+                              Border.all(color: Colors.white, width: 2),
                         ),
                         child: const Icon(Icons.lock_rounded,
                             size: 9, color: Colors.white),
@@ -939,8 +942,8 @@ class _ChatListTile extends StatelessWidget {
                           const SizedBox(width: 8),
                           Text(
                             _formatTime(chat.metadata.lastTimestamp),
-                            style:
-                                TextStyle(fontSize: 12, color: Colors.grey[600]),
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
                           ),
                         ],
                       ),

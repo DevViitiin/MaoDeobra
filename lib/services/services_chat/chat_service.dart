@@ -1,4 +1,4 @@
-// lib/services/chat_service_final.dart - COMPATÍVEL COM FORMATO ANTIGO
+// lib/services/services_chat/chat_service_final.dart
 
 // ignore_for_file: unused_field, unnecessary_cast
 
@@ -10,28 +10,26 @@ import '../../models/chat_model/participant_model.dart';
 import '../../core/constants/firebase_paths.dart';
 import 'firebase_service.dart';
 
-
 class ChatServiceFinal {
   final FirebaseService _firebase = FirebaseService();
-  
+
   static const int INITIAL_MESSAGES_LIMIT = 15;
-  
-  // Cache local
+
   final Map<String, List<Message>> _messagesCache = {};
   final Map<String, int> _lastLoadedTimestamp = {};
   final Map<String, StreamSubscription> _activeListeners = {};
-  
+
   String? _activeChat;
   String? _userRole;
-  
+
   static final ChatServiceFinal _instance = ChatServiceFinal._internal();
   factory ChatServiceFinal() => _instance;
   ChatServiceFinal._internal();
 
   // ========================================
-  // 1️⃣ INICIALIZAÇÃO DO CHAT
+  // 1️⃣ INICIALIZAÇÃO
   // ========================================
-  
+
   Future<Chat> initializeChat(
     String chatId,
     String contractorId,
@@ -40,48 +38,36 @@ class ChatServiceFinal {
   ) async {
     try {
       final chatSnapshot = await _firebase.getSnapshot(
-        FirebasePaths.chatPath(chatId)
+        FirebasePaths.chatPath(chatId),
       );
 
       Chat chat;
-      
+
       if (chatSnapshot == null) {
-        final initialData = Chat.createInitialStructure(
-          contractorId,
-          employeeId,
-        );
-        
+        final initialData = Chat.createInitialStructure(contractorId, employeeId);
         await _firebase.chatRef(chatId).set(initialData);
         await _firebase.ensureChatMessagesStructure(chatId);
-        
         chat = Chat.fromMap(chatId, initialData);
       } else {
-        chat = Chat.fromMap(
-          chatId,
-          chatSnapshot.value as Map<dynamic, dynamic>,
-        );
-        
+        chat = Chat.fromMap(chatId, chatSnapshot.value as Map<dynamic, dynamic>);
         await _firebase.ensureChatMessagesStructure(chatId);
       }
 
       return chat;
-      
     } catch (e) {
       throw Exception('Erro ao inicializar chat: $e');
     }
   }
 
   // ========================================
-  // 2️⃣ STATUS ONLINE/OFFLINE - COMPATÍVEL COM FORMATO ANTIGO
+  // 2️⃣ STATUS ONLINE/OFFLINE
   // ========================================
-  
-  /// ✅ ATUALIZADO: Usa formato flat (antigo) que está no seu banco
+
   Future<void> setUserOnline(String chatId, String userRole) async {
     try {
       _activeChat = chatId;
       _userRole = userRole;
-      
-      // ✅ Usa formato FLAT (compatível com estrutura atual)
+
       final statusPath = 'Chats/$chatId/participants/$userRole';
       final lastSeenPath = 'Chats/$chatId/participants/${userRole}_last_seen';
       final now = ServerValue.timestamp;
@@ -93,15 +79,11 @@ class ChatServiceFinal {
 
       _firebase.setOnDisconnect(statusPath, 'offline');
       _firebase.setOnDisconnect(lastSeenPath, now);
-
-      print('✅ Status online configurado (formato flat)');
-      
     } catch (e) {
       print('❌ Erro ao marcar online: $e');
     }
   }
 
-  /// ✅ ATUALIZADO: Usa formato flat (antigo)
   Future<void> setUserOffline(String chatId, String userRole) async {
     try {
       final statusPath = 'Chats/$chatId/participants/$userRole';
@@ -114,12 +96,9 @@ class ChatServiceFinal {
 
       await _firebase.cancelOnDisconnect(statusPath);
       await _firebase.cancelOnDisconnect(lastSeenPath);
-      
+
       _activeChat = null;
       _userRole = null;
-      
-      print('✅ Status offline definido (formato flat)');
-      
     } catch (e) {
       print('❌ Erro ao marcar offline: $e');
     }
@@ -128,16 +107,14 @@ class ChatServiceFinal {
   // ========================================
   // 3️⃣ ENVIAR MENSAGEM
   // ========================================
-  
+
   Future<String> sendMessage(
     String chatId,
     String text,
     String senderRole,
   ) async {
     try {
-      if (text.trim().isEmpty) {
-        throw Exception('Mensagem vazia');
-      }
+      if (text.trim().isEmpty) throw Exception('Mensagem vazia');
 
       final now = DateTime.now().millisecondsSinceEpoch;
       final messagesRef = _firebase.chatMessagesRef(chatId).push();
@@ -148,6 +125,7 @@ class ChatServiceFinal {
         text: text.trim(),
         sender: senderRole,
         timestamp: now,
+        // Quem envia já leu a própria mensagem
         readByContractor: senderRole == 'contractor',
         readByEmployee: senderRole == 'employee',
       );
@@ -166,7 +144,6 @@ class ChatServiceFinal {
 
       print('✅ Mensagem enviada: $messageId');
       return messageId;
-      
     } catch (e) {
       throw Exception('Erro ao enviar mensagem: $e');
     }
@@ -174,37 +151,34 @@ class ChatServiceFinal {
 
   Future<void> _incrementUnreadCount(String chatId, String userRole) async {
     try {
-      final countRef = _firebase.database
-          .ref('Chats/$chatId/unreadCount/$userRole');
-      
+      final countRef = _firebase.database.ref('Chats/$chatId/unreadCount/$userRole');
       await countRef.runTransaction((current) {
         final currentCount = (current as int?) ?? 0;
         return Transaction.success(currentCount + 1);
       });
-      
     } catch (e) {
       print('❌ Erro ao incrementar unreadCount: $e');
     }
   }
 
   // ========================================
-  // 4️⃣ LISTENER DE MENSAGENS
+  // 4️⃣ STREAM DE MENSAGENS
   // ========================================
-  
+
   Stream<List<Message>> getMessagesStream(String chatId) {
     final controller = StreamController<List<Message>>.broadcast();
-    
+
     _loadInitialMessages(chatId, INITIAL_MESSAGES_LIMIT).then((initialMessages) {
       _messagesCache[chatId] = initialMessages;
       controller.add(initialMessages);
-      
+
       if (initialMessages.isNotEmpty) {
         _lastLoadedTimestamp[chatId] = initialMessages.last.timestamp;
       }
-      
+
       _setupIncrementalListener(chatId, controller);
     });
-    
+
     return controller.stream;
   }
 
@@ -219,20 +193,17 @@ class ChatServiceFinal {
       if (!snapshot.exists) return [];
 
       final data = snapshot.value;
-      
-      if (data is! Map) {
-        print('⚠️ Mensagens não são Map: ${data.runtimeType}');
-        return [];
-      }
+      if (data is! Map) return [];
 
       final messages = <Message>[];
 
       (data as Map<dynamic, dynamic>).forEach((key, value) {
         if (key == '_placeholder') return;
-        
         if (value is Map) {
           try {
-            messages.add(Message.fromMap(key, value));
+            final msg = Message.fromMap(key, value);
+            print('📩 Mensagem $key | read_by_contractor=${msg.readByContractor} | read_by_employee=${msg.readByEmployee}');
+            messages.add(msg);
           } catch (e) {
             print('⚠️ Erro ao parsear mensagem $key: $e');
           }
@@ -240,10 +211,7 @@ class ChatServiceFinal {
       });
 
       messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      
-      print('🔥 ${messages.length} mensagens iniciais carregadas');
       return messages;
-      
     } catch (e) {
       print('❌ Erro ao carregar mensagens iniciais: $e');
       return [];
@@ -255,49 +223,69 @@ class ChatServiceFinal {
     StreamController<List<Message>> controller,
   ) {
     final lastTimestamp = _lastLoadedTimestamp[chatId] ?? 0;
-    
+
     final listener = _firebase
         .chatMessagesRef(chatId)
         .orderByChild('timestamp')
         .startAfter(lastTimestamp)
         .onChildAdded
         .listen((event) {
-      
       if (event.snapshot.key == '_placeholder') return;
-      
+
       final data = event.snapshot.value;
-      
-      if (data is! Map) {
-        print('⚠️ Mensagem recebida não é Map: ${data.runtimeType}');
-        return;
-      }
-      
+      if (data is! Map) return;
+
       try {
         final newMessage = Message.fromMap(event.snapshot.key!, data);
-        
         final currentMessages = _messagesCache[chatId] ?? [];
         final isDuplicate = currentMessages.any((m) => m.id == newMessage.id);
-        
+
         if (!isDuplicate) {
           currentMessages.add(newMessage);
           _messagesCache[chatId] = currentMessages;
           _lastLoadedTimestamp[chatId] = newMessage.timestamp;
-          
           controller.add(currentMessages);
-          print('📨 Nova mensagem adicionada: ${newMessage.id}');
         }
       } catch (e) {
         print('❌ Erro ao processar nova mensagem: $e');
       }
     });
-    
+
+    // ✅ Listener de CHANGES — quando read_by_ muda no Firebase,
+    // atualiza a mensagem no cache e re-emite a lista
+    final changeListener = _firebase
+        .chatMessagesRef(chatId)
+        .onChildChanged
+        .listen((event) {
+      if (event.snapshot.key == '_placeholder') return;
+
+      final data = event.snapshot.value;
+      if (data is! Map) return;
+
+      try {
+        final updatedMessage = Message.fromMap(event.snapshot.key!, data);
+        final currentMessages = _messagesCache[chatId] ?? [];
+        final index = currentMessages.indexWhere((m) => m.id == updatedMessage.id);
+
+        if (index != -1) {
+          currentMessages[index] = updatedMessage;
+          _messagesCache[chatId] = currentMessages;
+          controller.add(List.from(currentMessages));
+          print('🔄 Mensagem atualizada: ${updatedMessage.id} | read_by_contractor=${updatedMessage.readByContractor} | read_by_employee=${updatedMessage.readByEmployee}');
+        }
+      } catch (e) {
+        print('❌ Erro ao processar mudança de mensagem: $e');
+      }
+    });
+
     _activeListeners['messages_$chatId'] = listener;
+    _activeListeners['changes_$chatId'] = changeListener;
   }
 
   // ========================================
   // 5️⃣ PAGINAÇÃO
   // ========================================
-  
+
   Future<List<Message>> loadOlderMessages(
     String chatId, {
     required int oldestTimestamp,
@@ -314,11 +302,7 @@ class ChatServiceFinal {
       if (!snapshot.exists) return [];
 
       final data = snapshot.value;
-      
-      if (data is! Map) {
-        print('⚠️ Dados de paginação não são Map');
-        return [];
-      }
+      if (data is! Map) return [];
 
       final messages = <Message>[];
 
@@ -334,13 +318,11 @@ class ChatServiceFinal {
       });
 
       messages.sort((a, b) => a.timestamp.compareTo(b.timestamp));
-      
+
       final cachedMessages = _messagesCache[chatId] ?? [];
       _messagesCache[chatId] = [...messages, ...cachedMessages];
-      
-      print('🔥 ${messages.length} mensagens antigas carregadas');
+
       return messages;
-      
     } catch (e) {
       print('❌ Erro ao carregar mensagens antigas: $e');
       return [];
@@ -349,55 +331,85 @@ class ChatServiceFinal {
 
   // ========================================
   // 6️⃣ MARK AS READ
+  //
+  // Zera unreadCount E atualiza read_by_contractor
+  // ou read_by_employee nas mensagens do Firebase.
+  // O onChildChanged acima re-emite a lista automaticamente.
   // ========================================
-  
+
   Future<void> markAsRead(String chatId, String userRole) async {
     try {
-      final countRef = _firebase.database
-          .ref('Chats/$chatId/unreadCount/$userRole');
-      
-      await countRef.set(0);
-      
-      print('✅ Chat marcado como lido');
-      
+      print('═══════════════════════════════════════');
+      print('📖 markAsRead | chat=$chatId | role=$userRole');
+
+      // Campo que este usuário precisa marcar como lido
+      final readField = userRole == 'contractor'
+          ? 'read_by_contractor'
+          : 'read_by_employee';
+
+      // 1. Busca mensagens onde o campo ainda é false
+      final snapshot = await _firebase
+          .chatMessagesRef(chatId)
+          .orderByChild(readField)
+          .equalTo(false)
+          .get();
+
+      print('📦 Mensagens com $readField=false: ${snapshot.exists ? 'sim' : 'nenhuma'}');
+
+      if (snapshot.exists && snapshot.value is Map) {
+        final data = snapshot.value as Map<dynamic, dynamic>;
+        final Map<String, dynamic> updates = {};
+
+        data.forEach((messageId, value) {
+          if (messageId == '_placeholder') return;
+          // Caminho absoluto a partir da raiz do banco
+          updates['ChatMessages/$chatId/$messageId/$readField'] = true;
+          print('   ✏️ Marcando: ChatMessages/$chatId/$messageId/$readField = true');
+        });
+
+        if (updates.isNotEmpty) {
+          // Batch update — uma única escrita no Firebase
+          await _firebase.database.ref().update(updates);
+          print('✅ ${updates.length} mensagens atualizadas');
+        }
+      }
+
+      // 2. Zera o unreadCount
+      await _firebase.database
+          .ref('Chats/$chatId/unreadCount/$userRole')
+          .set(0);
+
+      print('✅ unreadCount/$userRole zerado');
+      print('═══════════════════════════════════════');
     } catch (e) {
-      print('❌ Erro ao marcar como lido: $e');
+      print('❌ Erro em markAsRead: $e');
     }
   }
 
   // ========================================
-  // 7️⃣ STATUS DO OUTRO USUÁRIO - COMPATÍVEL COM FORMATO FLAT
+  // 7️⃣ STATUS DO OUTRO USUÁRIO
   // ========================================
-  
-  /// ✅ ATUALIZADO: Lê formato flat (antigo)
+
   Stream<ParticipantData> getOtherParticipantStatus(
     String chatId,
     String myRole,
   ) {
     final otherRole = myRole == 'contractor' ? 'employee' : 'contractor';
-    
+
     return _firebase.database
         .ref('Chats/$chatId/participants')
         .onValue
         .map((event) {
-      
       try {
         if (event.snapshot.exists) {
           final data = event.snapshot.value;
-          
           if (data is Map) {
-            // ✅ Usa ParticipantData.fromMap que já suporta ambos formatos
-            final participant = ParticipantData.fromMap(data, otherRole);
-            
-            print('👤 Status do $otherRole: ${participant.status} (${participant.lastSeen})');
-            
-            return participant;
+            return ParticipantData.fromMap(data, otherRole);
           }
         }
       } catch (e) {
         print('❌ Erro ao processar status: $e');
       }
-      
       return ParticipantData(
         status: 'offline',
         lastSeen: DateTime.now().millisecondsSinceEpoch,
@@ -408,20 +420,18 @@ class ChatServiceFinal {
   // ========================================
   // 8️⃣ UNREAD COUNT
   // ========================================
-  
+
   Stream<int> getUnreadCountStream(String chatId, String userRole) {
     return _firebase.database
         .ref('Chats/$chatId/unreadCount/$userRole')
         .onValue
-        .map((event) {
-      return (event.snapshot.value as int?) ?? 0;
-    });
+        .map((event) => (event.snapshot.value as int?) ?? 0);
   }
 
   // ========================================
-  // 9️⃣ METADATA DO CHAT
+  // 9️⃣ METADATA
   // ========================================
-  
+
   Future<void> _updateChatMetadata({
     required String chatId,
     required String lastMessage,
@@ -429,26 +439,23 @@ class ChatServiceFinal {
     required int lastTimestamp,
   }) async {
     try {
-      final metadataRef = _firebase.chatMetadataRef(chatId);
-      
-      await metadataRef.update({
+      await _firebase.chatMetadataRef(chatId).update({
         'last_message': lastMessage,
         'last_sender': lastSender,
         'last_timestamp': lastTimestamp,
       });
-      
     } catch (e) {
       print('❌ Erro ao atualizar metadata: $e');
     }
   }
 
   // ========================================
-  // 🔟 LISTA DE CHATS - COM TRATAMENTO ROBUSTO
+  // 🔟 LISTA DE CHATS
   // ========================================
-  
+
   Stream<List<Chat>> getChatListStream(String userId, String userRole) {
     final field = userRole == 'contractor' ? 'contractor' : 'employee';
-    
+
     return _firebase.database
         .ref('Chats')
         .orderByChild(field)
@@ -456,41 +463,27 @@ class ChatServiceFinal {
         .onValue
         .map((event) {
       try {
-        if (!event.snapshot.exists) {
-          print('📋 Nenhum chat encontrado para $userId ($userRole)');
-          return <Chat>[];
-        }
+        if (!event.snapshot.exists) return <Chat>[];
 
         final data = event.snapshot.value;
-        
-        if (data is! Map) {
-          print('❌ Dados de chats não são Map: ${data.runtimeType}');
-          return <Chat>[];
-        }
+        if (data is! Map) return <Chat>[];
 
         final chats = <Chat>[];
 
         (data as Map<dynamic, dynamic>).forEach((chatId, chatData) {
           if (chatData is Map) {
             try {
-              final chat = Chat.fromMap(chatId, chatData);
-              chats.add(chat);
-              print('✅ Chat carregado: $chatId');
+              chats.add(Chat.fromMap(chatId, chatData));
             } catch (e) {
               print('❌ Erro ao parsear chat $chatId: $e');
             }
-          } else {
-            print('⚠️ Chat $chatId não é Map: ${chatData.runtimeType}');
           }
         });
 
-        chats.sort((a, b) => 
-          b.metadata.lastTimestamp.compareTo(a.metadata.lastTimestamp)
-        );
+        chats.sort((a, b) =>
+            b.metadata.lastTimestamp.compareTo(a.metadata.lastTimestamp));
 
-        print('📋 Total de chats carregados: ${chats.length}');
         return chats;
-        
       } catch (e) {
         print('❌ Erro ao processar lista de chats: $e');
         return <Chat>[];
@@ -501,16 +494,12 @@ class ChatServiceFinal {
   // ========================================
   // 🧹 CLEANUP
   // ========================================
-  
+
   void disposeChat() {
-    _activeListeners.forEach((key, subscription) {
-      subscription.cancel();
-    });
+    _activeListeners.forEach((_, sub) => sub.cancel());
     _activeListeners.clear();
-    
     _activeChat = null;
     _userRole = null;
-    
     print('🧹 Chat listeners cancelados');
   }
 

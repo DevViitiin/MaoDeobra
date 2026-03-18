@@ -10,12 +10,10 @@ import '../models/chat_model/message_model.dart';
 import '../models/chat_model/participant_model.dart';
 import '../services/services_chat/firebase_service.dart';
 
-
 class ChatControllerFinal extends ChangeNotifier {
   final ChatServiceFinal _chatService = ChatServiceFinal();
   final FirebaseService _firebase = FirebaseService();
 
-  // Estado do chat
   Chat? _currentChat;
   List<Message> _messages = [];
   ParticipantData? _otherParticipantStatus;
@@ -24,16 +22,13 @@ class ChatControllerFinal extends ChangeNotifier {
   bool _isSending = false;
   String? _error;
 
-  // Paginação
   bool _hasMoreMessages = true;
   bool _isLoadingMore = false;
 
-  // Listeners
   StreamSubscription? _messagesSubscription;
   StreamSubscription? _statusSubscription;
   StreamSubscription? _unreadCountSubscription;
 
-  // Configuração do chat
   String? _chatId;
   String? _userRole;
   String? _userId;
@@ -53,12 +48,10 @@ class ChatControllerFinal extends ChangeNotifier {
   bool get isLoadingMore => _isLoadingMore;
   bool get hasChat => _currentChat != null;
 
-  bool isSentByMe(Message message) {
-    return message.sender == _userRole;
-  }
+  bool isSentByMe(Message message) => message.sender == _userRole;
 
   // ========================================
-  // INICIALIZAÇÃO DO CHAT
+  // INICIALIZAÇÃO
   // ========================================
 
   Future<void> initializeChat({
@@ -75,7 +68,6 @@ class ChatControllerFinal extends ChangeNotifier {
     _clearError();
 
     try {
-      // 1. Inicializa/busca chat
       _currentChat = await _chatService.initializeChat(
         chatId,
         contractorId,
@@ -83,15 +75,13 @@ class ChatControllerFinal extends ChangeNotifier {
         userRole,
       );
 
-      // 2. Marca usuário como online (com onDisconnect automático)
       await _chatService.setUserOnline(chatId, userRole);
 
-      // 3. Configura listeners
       _setupMessageListener();
       _setupStatusListener();
       _setupUnreadCountListener();
 
-      // 4. Marca como lido (zera unreadCount)
+      // ✅ markAsRead via ChatService — atualiza read_by_ nas mensagens
       await _chatService.markAsRead(chatId, userRole);
 
       _setLoading(false);
@@ -102,7 +92,7 @@ class ChatControllerFinal extends ChangeNotifier {
   }
 
   // ========================================
-  // LISTENERS EM TEMPO REAL
+  // LISTENERS
   // ========================================
 
   void _setupMessageListener() {
@@ -115,9 +105,7 @@ class ChatControllerFinal extends ChangeNotifier {
             _messages = newMessages;
             notifyListeners();
           },
-          onError: (error) {
-            _setError('Erro ao carregar mensagens: $error');
-          },
+          onError: (error) => _setError('Erro ao carregar mensagens: $error'),
         );
   }
 
@@ -131,9 +119,7 @@ class ChatControllerFinal extends ChangeNotifier {
             _otherParticipantStatus = status;
             notifyListeners();
           },
-          onError: (error) {
-            print('Erro ao monitorar status: $error');
-          },
+          onError: (error) => print('Erro ao monitorar status: $error'),
         );
   }
 
@@ -147,39 +133,24 @@ class ChatControllerFinal extends ChangeNotifier {
             _unreadCount = count;
             notifyListeners();
           },
-          onError: (error) {
-            print('Erro ao monitorar unreadCount: $error');
-          },
+          onError: (error) => print('Erro ao monitorar unreadCount: $error'),
         );
   }
 
   // ========================================
-  // ENVIO DE MENSAGENS (SEM OTIMISTA)
+  // ENVIO DE MENSAGEM
   // ========================================
 
-  /// ✅ FIX: Não adiciona mensagem otimista no controller
-  /// O listener onChildAdded vai adicionar automaticamente quando salvar
   Future<void> sendMessage(String text) async {
-    if (text.trim().isEmpty || _chatId == null || _userRole == null) {
-      return;
-    }
+    if (text.trim().isEmpty || _chatId == null || _userRole == null) return;
 
     _isSending = true;
     notifyListeners();
 
     try {
-      // Envia direto para Firebase
-      await _chatService.sendMessage(
-        _chatId!,
-        text.trim(),
-        _userRole!,
-      );
-
+      await _chatService.sendMessage(_chatId!, text.trim(), _userRole!);
       _isSending = false;
       notifyListeners();
-      
-      print('✅ Mensagem enviada com sucesso');
-      
     } catch (e) {
       _setError('Erro ao enviar mensagem: $e');
       _isSending = false;
@@ -188,20 +159,17 @@ class ChatControllerFinal extends ChangeNotifier {
   }
 
   // ========================================
-  // PAGINAÇÃO (LAZY LOADING)
+  // PAGINAÇÃO
   // ========================================
 
   Future<void> loadMoreMessages() async {
-    if (_isLoadingMore || !_hasMoreMessages || _messages.isEmpty) {
-      return;
-    }
+    if (_isLoadingMore || !_hasMoreMessages || _messages.isEmpty) return;
 
     _isLoadingMore = true;
     notifyListeners();
 
     try {
       final oldestTimestamp = _messages.first.timestamp;
-
       final olderMessages = await _chatService.loadOlderMessages(
         _chatId!,
         oldestTimestamp: oldestTimestamp,
@@ -211,12 +179,9 @@ class ChatControllerFinal extends ChangeNotifier {
       if (olderMessages.isEmpty) {
         _hasMoreMessages = false;
       } else {
-        // Evita duplicatas
         final existingIds = _messages.map((m) => m.id).toSet();
-        final newMessages = olderMessages
-            .where((m) => !existingIds.contains(m.id))
-            .toList();
-
+        final newMessages =
+            olderMessages.where((m) => !existingIds.contains(m.id)).toList();
         _messages.insertAll(0, newMessages);
       }
 
@@ -230,17 +195,12 @@ class ChatControllerFinal extends ChangeNotifier {
   }
 
   // ========================================
-  // MARK AS READ
+  // MARK AS READ — chama o service que atualiza o Firebase
   // ========================================
 
   Future<void> markAsRead() async {
     if (_chatId == null || _userRole == null) return;
-
-    try {
-      await _chatService.markAsRead(_chatId!, _userRole!);
-    } catch (e) {
-      print('Erro ao marcar como lido: $e');
-    }
+    await _chatService.markAsRead(_chatId!, _userRole!);
   }
 
   // ========================================
@@ -263,7 +223,7 @@ class ChatControllerFinal extends ChangeNotifier {
   }
 
   // ========================================
-  // LIFECYCLE & CLEANUP
+  // LIFECYCLE
   // ========================================
 
   Future<void> leaveChat() async {
@@ -276,7 +236,7 @@ class ChatControllerFinal extends ChangeNotifier {
     _unreadCountSubscription?.cancel();
 
     _chatService.disposeChat();
-    
+
     if (_chatId != null) {
       _chatService.clearChatCache(_chatId!);
     }
@@ -289,7 +249,7 @@ class ChatControllerFinal extends ChangeNotifier {
   }
 
   // ========================================
-  // MÉTODOS AUXILIARES
+  // AUXILIARES
   // ========================================
 
   void reset() {
@@ -322,11 +282,6 @@ class ChatControllerFinal extends ChangeNotifier {
     }
   }
 
-  Message? get lastMessage {
-    return _messages.isEmpty ? null : _messages.last;
-  }
-
-  Message? get firstMessage {
-    return _messages.isEmpty ? null : _messages.first;
-  }
+  Message? get lastMessage => _messages.isEmpty ? null : _messages.last;
+  Message? get firstMessage => _messages.isEmpty ? null : _messages.first;
 }

@@ -3,6 +3,9 @@
 import 'package:dartobra_new/controllers/chat_controller.dart';
 import 'package:dartobra_new/helpers/badge_helper.dart';
 import 'package:dartobra_new/screens/app_home/complaints/complaint_chat.dart';
+import 'package:dartobra_new/services/services_chat/chat_service.dart';
+import 'package:dartobra_new/widgets/chat_input.dart';
+import 'package:dartobra_new/widgets/online_status_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:dartobra_new/widgets/message_bubble.dart';
@@ -33,89 +36,53 @@ class ChatRoomScreen extends StatefulWidget {
   State<ChatRoomScreen> createState() => _ChatRoomScreenState();
 }
 
-class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObserver {
+class _ChatRoomScreenState extends State<ChatRoomScreen>
+    with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   bool _showScrollToBottom = false;
   bool _isLoadingMore = false;
-  bool _hasMarkedAsRead = false;
+
+  // Controla scroll automático
+  int _previousMessageCount = 0;
+  bool _initialScrollDone = false;
+
+  int _recipientUnreadCount = 0;
+
+  String get _recipientRole =>
+      widget.userRole == 'contractor' ? 'employee' : 'contractor';
 
   @override
   void initState() {
     super.initState();
-    debugPrint('═══════════════════════════════════════');
-    debugPrint('🎬 CHAT ROOM - INIT');
-    debugPrint('═══════════════════════════════════════');
-    debugPrint('ChatId: ${widget.chatId}');
-    debugPrint('UserId: ${widget.userId}');
-    debugPrint('UserRole: ${widget.userRole}');
-    
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeChat();
       _setupScrollListener();
-      _markAsReadWithDelay();
+      _setupRecipientUnreadStream();
     });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    
-    debugPrint('📱 App Lifecycle: $state');
-    
     if (state == AppLifecycleState.resumed && mounted) {
-      debugPrint('✅ App resumed - marcando como lido novamente');
       _markAsRead();
-    } else if (state == AppLifecycleState.paused) {
-      debugPrint('⏸️ App paused');
     }
   }
 
-  /// Marca chat como lido com um pequeno delay para garantir que tudo foi carregado
-  Future<void> _markAsReadWithDelay() async {
-    if (_hasMarkedAsRead) {
-      debugPrint('⚠️ Já foi marcado como lido, pulando...');
-      return;
-    }
-
-    debugPrint('⏳ Aguardando 500ms antes de marcar como lido...');
-    await Future.delayed(Duration(milliseconds: 500));
-    
-    if (mounted) {
-      await _markAsRead();
-      _hasMarkedAsRead = true;
-    }
-  }
-
-  /// Marca o chat como lido e ajusta os badges
-  Future<void> _markAsRead() async {
-    try {
-      debugPrint('═══════════════════════════════════════');
-      debugPrint('📖 MARCANDO CHAT COMO LIDO NO CHAT ROOM');
-      debugPrint('═══════════════════════════════════════');
-      debugPrint('ChatId: ${widget.chatId}');
-      debugPrint('UserId: ${widget.userId}');
-      debugPrint('UserRole: ${widget.userRole}');
-      
-      await BadgeHelper.markChatAsRead(
-        widget.chatId,
-        widget.userId,
-        widget.userRole,
-      );
-      
-      debugPrint('✅ Chat marcado como lido com sucesso');
-      debugPrint('═══════════════════════════════════════\n');
-    } catch (e, stack) {
-      debugPrint('❌ ERRO ao marcar chat como lido: $e');
-      debugPrint('Stack: $stack');
-    }
+  void _setupRecipientUnreadStream() {
+    ChatServiceFinal()
+        .getUnreadCountStream(widget.chatId, _recipientRole)
+        .listen((count) {
+      if (mounted) {
+        setState(() => _recipientUnreadCount = count);
+      }
+    });
   }
 
   Future<void> _initializeChat() async {
     if (!mounted) return;
 
-    debugPrint('🔄 Inicializando chat...');
-    
     final controller = context.read<ChatControllerFinal>();
     await controller.initializeChat(
       chatId: widget.chatId,
@@ -124,13 +91,38 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
       userRole: widget.userRole,
     );
 
+    await _markBadgeAsRead();
+
+    // Scroll inicial após carregar mensagens
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _scrollToBottom(animated: false);
+        _initialScrollDone = true;
       });
     }
-    
-    debugPrint('✅ Chat inicializado');
+  }
+
+  Future<void> _markBadgeAsRead() async {
+    try {
+      await BadgeHelper.markChatAsRead(
+        widget.chatId,
+        widget.userId,
+        widget.userRole,
+      );
+    } catch (e) {
+      debugPrint('❌ Erro ao atualizar badge: $e');
+    }
+  }
+
+  Future<void> _markAsRead() async {
+    if (!mounted) return;
+    try {
+      final controller = context.read<ChatControllerFinal>();
+      await controller.markAsRead();
+      await _markBadgeAsRead();
+    } catch (e) {
+      debugPrint('❌ Erro ao marcar como lido: $e');
+    }
   }
 
   void _setupScrollListener() {
@@ -141,33 +133,32 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
           _scrollController.position.maxScrollExtent - 100;
 
       if (_showScrollToBottom != !isAtBottom) {
-        setState(() {
-          _showScrollToBottom = !isAtBottom;
-        });
+        setState(() => _showScrollToBottom = !isAtBottom);
       }
 
+      // Paginação ao chegar no topo
       if (_scrollController.position.pixels <= 100 && !_isLoadingMore) {
         _isLoadingMore = true;
-
         Future.microtask(() {
           if (mounted) {
-            final controller = context.read<ChatControllerFinal>();
-            controller.loadMoreMessages().then((_) {
-              _isLoadingMore = false;
-            });
+            context
+                .read<ChatControllerFinal>()
+                .loadMoreMessages()
+                .then((_) => _isLoadingMore = false);
           }
         });
       }
     });
   }
 
+  /// Rola para o fim da lista
   void _scrollToBottom({bool animated = true}) {
     if (!_scrollController.hasClients) return;
 
     if (animated) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
-        duration: Duration(milliseconds: 300),
+        duration: const Duration(milliseconds: 300),
         curve: Curves.easeOut,
       );
     } else {
@@ -175,25 +166,24 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
     }
   }
 
+  /// Verifica se o usuário está perto do fim da lista
+  bool get _isNearBottom {
+    if (!_scrollController.hasClients) return true;
+    final maxScroll = _scrollController.position.maxScrollExtent;
+    final current = _scrollController.position.pixels;
+    // Considera "perto do fim" se estiver a menos de 150px do final
+    return (maxScroll - current) <= 150;
+  }
+
   @override
   void dispose() {
-    debugPrint('═══════════════════════════════════════');
-    debugPrint('👋 CHAT ROOM - DISPOSE');
-    debugPrint('═══════════════════════════════════════');
-    debugPrint('ChatId: ${widget.chatId}');
-    debugPrint('UserId: ${widget.userId}');
-    
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
-    
     try {
       context.read<ChatControllerFinal>().leaveChat();
-      debugPrint('✅ Chat fechado com sucesso');
     } catch (e) {
       debugPrint('❌ Erro ao sair do chat: $e');
     }
-    
-    debugPrint('═══════════════════════════════════════\n');
     super.dispose();
   }
 
@@ -204,11 +194,28 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
       body: Consumer<ChatControllerFinal>(
         builder: (context, controller, child) {
           if (controller.isLoading) {
-            return Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (controller.error != null) {
             return _buildErrorWidget(controller.error!);
+          }
+
+          // ✅ Detecta nova mensagem e rola automaticamente
+          final currentCount = controller.messages.length;
+          if (_initialScrollDone &&
+              currentCount > _previousMessageCount) {
+            _previousMessageCount = currentCount;
+
+            // Só rola automático se o usuário estiver perto do fim
+            // (não interrompe quem está lendo mensagens antigas)
+            if (_isNearBottom) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _scrollToBottom();
+              });
+            }
+          } else {
+            _previousMessageCount = currentCount;
           }
 
           return Column(
@@ -221,16 +228,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
                   ],
                 ),
               ),
-              
               ChatInput(
                 onSendMessage: (text) async {
-                  debugPrint('📤 Enviando mensagem: $text');
                   await controller.sendMessage(text);
-                  
-                  Future.microtask(() {
-                    if (mounted) {
-                      _scrollToBottom();
-                    }
+                  // Sempre rola ao enviar mensagem própria
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _scrollToBottom();
                   });
                 },
                 isEnabled: !controller.isSending,
@@ -248,7 +251,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
       title: Consumer<ChatControllerFinal>(
         builder: (context, controller, child) {
           final status = controller.otherParticipantStatus;
-
           return Row(
             children: [
               CircleAvatar(
@@ -258,18 +260,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
                     ? NetworkImage(widget.otherUserAvatar!)
                     : null,
                 child: widget.otherUserAvatar == null
-                    ? Icon(Icons.person, color: Colors.white)
+                    ? const Icon(Icons.person, color: Colors.white)
                     : null,
               ),
-              SizedBox(width: 12),
-
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       widget.otherUserName,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
                       ),
@@ -289,27 +290,23 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
       ),
       actions: [
         PopupMenuButton<String>(
-          onSelected: (value) => _handleMenuAction(value),
+          onSelected: _handleMenuAction,
           itemBuilder: (context) => [
-            PopupMenuItem(
+            const PopupMenuItem(
               value: 'clear',
-              child: Row(
-                children: [
-                  Icon(Icons.delete_sweep, size: 20),
-                  SizedBox(width: 8),
-                  Text('Limpar conversa'),
-                ],
-              ),
+              child: Row(children: [
+                Icon(Icons.delete_sweep, size: 20),
+                SizedBox(width: 8),
+                Text('Limpar conversa'),
+              ]),
             ),
-            PopupMenuItem(
+            const PopupMenuItem(
               value: 'denunciar',
-              child: Row(
-                children: [
-                  Icon(Icons.warning, size: 20),
-                  SizedBox(width: 8),
-                  Text('Denunciar'),
-                ],
-              ),
+              child: Row(children: [
+                Icon(Icons.warning, size: 20),
+                SizedBox(width: 8),
+                Text('Denunciar'),
+              ]),
             ),
           ],
         ),
@@ -318,17 +315,16 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
   }
 
   Widget _buildMessagesList(ChatControllerFinal controller) {
-    if (controller.messages.isEmpty) {
-      return _buildEmptyState();
-    }
+    if (controller.messages.isEmpty) return _buildEmptyState();
 
     return ListView.builder(
       controller: _scrollController,
-      padding: EdgeInsets.symmetric(vertical: 16),
-      itemCount: controller.messages.length + (controller.isLoadingMore ? 1 : 0),
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      itemCount: controller.messages.length +
+          (controller.isLoadingMore ? 1 : 0),
       itemBuilder: (context, index) {
         if (controller.isLoadingMore && index == 0) {
-          return Center(
+          return const Center(
             child: Padding(
               padding: EdgeInsets.all(16),
               child: CircularProgressIndicator(),
@@ -336,7 +332,8 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
           );
         }
 
-        final messageIndex = controller.isLoadingMore ? index - 1 : index;
+        final messageIndex =
+            controller.isLoadingMore ? index - 1 : index;
         final message = controller.messages[messageIndex];
         final isSentByMe = controller.isSentByMe(message);
 
@@ -355,8 +352,11 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
             AnimatedMessageBubble(
               message: message,
               isSentByMe: isSentByMe,
+              myRole: widget.userRole,
+              
               avatarUrl: isSentByMe ? null : widget.otherUserAvatar,
-              onLongPress: () => _showMessageOptions(message, isSentByMe),
+              onLongPress: () =>
+                  _showMessageOptions(message, isSentByMe),
             ),
           ],
         );
@@ -365,20 +365,20 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
   }
 
   bool _shouldShowDateSeparator(int prevTimestamp, int currentTimestamp) {
-    final prevDate = DateTime.fromMillisecondsSinceEpoch(prevTimestamp);
-    final currentDate = DateTime.fromMillisecondsSinceEpoch(currentTimestamp);
-
-    return prevDate.day != currentDate.day ||
-        prevDate.month != currentDate.month ||
-        prevDate.year != currentDate.year;
+    final prev = DateTime.fromMillisecondsSinceEpoch(prevTimestamp);
+    final curr = DateTime.fromMillisecondsSinceEpoch(currentTimestamp);
+    return prev.day != curr.day ||
+        prev.month != curr.month ||
+        prev.year != curr.year;
   }
 
   Widget _buildDateSeparator(int timestamp) {
     return Container(
-      margin: EdgeInsets.symmetric(vertical: 16),
+      margin: const EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.grey[200],
             borderRadius: BorderRadius.circular(12),
@@ -401,17 +401,14 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
-          SizedBox(height: 16),
-          Text(
-            'Nenhuma mensagem ainda',
-            style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Envie a primeira mensagem!',
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-          ),
+          Icon(Icons.chat_bubble_outline,
+              size: 80, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text('Nenhuma mensagem ainda',
+              style: TextStyle(fontSize: 18, color: Colors.grey[600])),
+          const SizedBox(height: 8),
+          Text('Envie a primeira mensagem!',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500])),
         ],
       ),
     );
@@ -422,9 +419,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
       right: 16,
       bottom: 16,
       child: FloatingActionButton.small(
-        onPressed: () => _scrollToBottom(),
+        onPressed: _scrollToBottom,
         backgroundColor: Theme.of(context).primaryColor,
-        child: Icon(Icons.arrow_downward, color: Colors.white),
+        child: const Icon(Icons.arrow_downward, color: Colors.white),
       ),
     );
   }
@@ -432,24 +429,19 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
   Widget _buildErrorWidget(String error) {
     return Center(
       child: Padding(
-        padding: EdgeInsets.all(32),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red),
-            SizedBox(height: 16),
-            Text(
-              error,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16, color: Colors.red),
-            ),
-            SizedBox(height: 24),
+            const Icon(Icons.error_outline, size: 64, color: Colors.red),
+            const SizedBox(height: 16),
+            Text(error,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 16, color: Colors.red)),
+            const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () {
-                _hasMarkedAsRead = false;
-                _initializeChat();
-              },
-              child: Text('Tentar novamente'),
+              onPressed: _initializeChat,
+              child: const Text('Tentar novamente'),
             ),
           ],
         ),
@@ -465,16 +457,15 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: Icon(Icons.copy),
-              title: Text('Copiar'),
-              onTap: () {
-                Navigator.pop(context);
-              },
+              leading: const Icon(Icons.copy),
+              title: const Text('Copiar'),
+              onTap: () => Navigator.pop(context),
             ),
             if (isSentByMe)
               ListTile(
-                leading: Icon(Icons.delete, color: Colors.red),
-                title: Text('Deletar', style: TextStyle(color: Colors.red)),
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Deletar',
+                    style: TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.pop(context);
                   _confirmDelete(message.id);
@@ -490,19 +481,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Deletar mensagem'),
-        content: Text('Tem certeza que deseja deletar esta mensagem?'),
+        title: const Text('Deletar mensagem'),
+        content:
+            const Text('Tem certeza que deseja deletar esta mensagem?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar')),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            child: Text('Deletar', style: TextStyle(color: Colors.red)),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Deletar',
+                  style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -514,13 +503,9 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
         _confirmClearChat();
         break;
       case 'denunciar':
-        late String reportedId = '';
-
-        if (widget.userRole == 'employee') {
-          reportedId = widget.contractorId;
-        } else {
-          reportedId = widget.employeeId;
-        }
+        final reportedId = widget.userRole == 'employee'
+            ? widget.contractorId
+            : widget.employeeId;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -531,7 +516,6 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
             ),
           ),
         );
-
         break;
     }
   }
@@ -540,19 +524,17 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> with WidgetsBindingObse
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Limpar conversa'),
-        content: Text('Todas as mensagens serão apagadas. Continuar?'),
+        title: const Text('Limpar conversa'),
+        content:
+            const Text('Todas as mensagens serão apagadas. Continuar?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancelar'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar')),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            child: Text('Limpar', style: TextStyle(color: Colors.red)),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Limpar',
+                  style: TextStyle(color: Colors.red))),
         ],
       ),
     );
