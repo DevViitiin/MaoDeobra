@@ -41,7 +41,7 @@
     "badges": {
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth.uid === $uid"
       }
     },
     "user_requests": {
